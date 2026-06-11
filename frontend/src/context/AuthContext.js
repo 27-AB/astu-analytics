@@ -14,7 +14,13 @@ export const AuthProvider = ({ children }) => {
     if (token) {
       fetch(`${API}/auth/me`, { headers: { Authorization: `Bearer ${token}` } })
         .then(r => r.json())
-        .then(d => { if (d.success) setUser(d.user); else logout(); })
+        .then(d => { 
+          if (d.success) {
+            setUser({ ...d.user, id: d.user._id || d.user.id }); 
+          } else {
+            logout(); 
+          }
+        })
         .catch(logout)
         .finally(() => setLoading(false));
     } else setLoading(false);
@@ -29,8 +35,9 @@ export const AuthProvider = ({ children }) => {
     if (!data.success) throw new Error(data.message);
     localStorage.setItem("astu_token", data.token);
     setToken(data.token);
-    setUser(data.user);
-    return data.user;
+    const normalizedUser = { ...data.user, _id: data.user.id || data.user._id };
+    setUser(normalizedUser);
+    return normalizedUser;
   };
 
   const logout = () => {

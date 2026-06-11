@@ -11,6 +11,22 @@ export default function Settings() {
   const [editRole,   setEditRole]   = useState({});  // {userId: newRole}
   const [savingRole, setSavingRole] = useState(null);
   
+  // User creation state
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "viewer", college: "" });
+  const [creatingUser, setCreatingUser] = useState(false);
+  
+  // Profile update state
+  const [showEditProfile, setShowEditProfile] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", email: "", college: "", role: "viewer", password: "" });
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+
+  // Admin user profile editing state
+  const [showEditUser, setShowEditUser] = useState(false);
+  const [editUserForm, setEditUserForm] = useState({ name: "", email: "", college: "", role: "viewer", password: "", isActive: true });
+  const [editingUserId, setEditingUserId] = useState(null);
+  const [updatingUser, setUpdatingUser] = useState(false);
+  
   // API Endpoints State
   const [apiConfig, setApiConfig] = useState(() => {
     const urls = getApiUrls();
@@ -208,6 +224,112 @@ export default function Settings() {
     } finally { setSavingRole(null); }
   };
 
+  // Create new user (admin only)
+  const handleCreateUser = async (e) => {
+    e.preventDefault();
+    setCreatingUser(true);
+    addLog("Creating new user account...", "info");
+    try {
+      const res = await fetch(`${apiConfig.authUrl}/auth/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(newUser)
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      
+      addLog(`New user ${newUser.email} created successfully.`, "success");
+      setMsg("success:User created successfully.");
+      setNewUser({ name: "", email: "", password: "", role: "viewer", college: "" });
+      setShowAddUser(false);
+      fetchUsers();
+      setTimeout(() => setMsg(""), 3000);
+    } catch (e) {
+      addLog(`❌ User creation failed: ${e.message}`, "error");
+      setMsg("error:" + e.message);
+    } finally { setCreatingUser(false); }
+  };
+
+  // Update own profile
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setUpdatingProfile(true);
+    addLog("Updating user profile...", "info");
+    try {
+      const res = await fetch(`${apiConfig.authUrl}/auth/me`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(profileForm)
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      
+      addLog("Profile updated successfully.", "success");
+      setMsg("success:Profile updated successfully!");
+      setShowEditProfile(false);
+      setProfileForm({ name: "", email: "", college: "", role: "viewer", password: "" });
+      
+      // Refresh user data from backend
+      const userRes = await fetch(`${apiConfig.authUrl}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        if (userData.success && userData.user) {
+          // Update user in auth context
+          localStorage.setItem('user', JSON.stringify(userData.user));
+          window.location.reload();
+        }
+      }
+      
+      setTimeout(() => setMsg(""), 5000);
+    } catch (e) {
+      addLog(`❌ Profile update failed: ${e.message}`, "error");
+      setMsg("error:" + e.message);
+    } finally { setUpdatingProfile(false); }
+  };
+
+  // Admin: Update any user's profile
+  const handleUpdateUser = async (e) => {
+    e.preventDefault();
+    setUpdatingUser(true);
+    addLog(`Updating user profile for ${editUserForm.email}...`, "info");
+    try {
+      const res = await fetch(`${apiConfig.authUrl}/auth/users/${editingUserId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(editUserForm)
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      
+      addLog(`User profile updated successfully.`, "success");
+      setMsg("success:User profile updated successfully!");
+      setShowEditUser(false);
+      setEditUserForm({ name: "", email: "", college: "", role: "viewer", password: "", isActive: true });
+      setEditingUserId(null);
+      fetchUsers();
+      setTimeout(() => setMsg(""), 3000);
+    } catch (e) {
+      addLog(`❌ User profile update failed: ${e.message}`, "error");
+      setMsg("error:" + e.message);
+    } finally { setUpdatingUser(false); }
+  };
+
+  // Open edit user modal
+  const openEditUser = (user) => {
+    setEditingUserId(user._id);
+    setEditUserForm({
+      name: user.name,
+      email: user.email,
+      college: user.college || "",
+      role: user.role,
+      password: "",
+      isActive: user.isActive !== undefined ? user.isActive : true
+    });
+    setShowEditUser(true);
+  };
+
   const isSuccess = msg.startsWith("success:");
   const isError   = msg.startsWith("error:");
   const msgText   = msg.replace(/^(success|error|info):/, "");
@@ -328,15 +450,86 @@ export default function Settings() {
       {/* User management — admin only */}
       {user?.role === "admin" && (
         <div style={{ marginTop:16 }}>
-          <SectionCard title="User Account Control" action={<span style={{ color:"#64748b", fontSize:12 }}>{users.length} registered accounts</span>}>
+          <SectionCard title="User Account Control" action={
+            <div style={{ display:"flex", gap:8, alignItems:"center" }}>
+              <span style={{ color:"#64748b", fontSize:12 }}>{users.length} registered accounts</span>
+              <Btn small onClick={() => setShowAddUser(true)}>+ Add User</Btn>
+            </div>
+          }>
             <p style={{ color:"#64748b", fontSize:13, marginBottom:16 }}>
               Promote or demote users. Permissions change instantly across research, community, and settings access.
             </p>
+            
+            {/* Add User Form */}
+            {showAddUser && (
+              <div style={{ background:"rgba(34,211,238,0.05)", border:"1px solid rgba(34,211,238,0.2)", borderRadius:8, padding:16, marginBottom:16 }}>
+                <h4 style={{ color:"#22d3ee", fontSize:14, fontWeight:600, margin:"0 0 12px" }}>Create New User</h4>
+                <form onSubmit={handleCreateUser} style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                  <div>
+                    <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Full Name</label>
+                    <input
+                      required
+                      value={newUser.name}
+                      onChange={e => setNewUser({...newUser, name: e.target.value})}
+                      style={inputStyle}
+                      placeholder="e.g. John Doe"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Email</label>
+                    <input
+                      required
+                      type="email"
+                      value={newUser.email}
+                      onChange={e => setNewUser({...newUser, email: e.target.value})}
+                      style={inputStyle}
+                      placeholder="e.g. john@example.com"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Password</label>
+                    <input
+                      required
+                      type="password"
+                      value={newUser.password}
+                      onChange={e => setNewUser({...newUser, password: e.target.value})}
+                      style={inputStyle}
+                      placeholder="Minimum 6 characters"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Role</label>
+                    <select
+                      value={newUser.role}
+                      onChange={e => setNewUser({...newUser, role: e.target.value})}
+                      style={inputStyle}
+                    >
+                      <option value="viewer">Viewer</option>
+                      <option value="researcher">Researcher</option>
+                      <option value="admin">Admin</option>
+                    </select>
+                  </div>
+                  <div style={{ gridColumn:"1/-1" }}>
+                    <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>College</label>
+                    <input
+                      value={newUser.college}
+                      onChange={e => setNewUser({...newUser, college: e.target.value})}
+                      style={inputStyle}
+                      placeholder="e.g. College of Engineering"
+                    />
+                  </div>
+                  <div style={{ gridColumn:"1/-1", display:"flex", gap:10, marginTop:8 }}>
+                    <Btn disabled={creatingUser}>{creatingUser ? "Creating..." : "Create User"}</Btn>
+                    <Btn variant="secondary" onClick={() => setShowAddUser(false)}>Cancel</Btn>
+                  </div>
+                </form>
+              </div>
+            )}
             {loadUsers ? <p style={{ color:"#64748b" }}>Loading database records...</p> : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
-                    <tr>{["Full Name","Email","Current Role","Change Role","College","Registered"].map(h=>(
+                    <tr>{["Full Name","Email","Current Role","Actions","College","Registered"].map(h=>(
                       <th key={h} style={{ textAlign:"left", padding:"8px 12px", color:"#475569", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:".05em", borderBottom:"1px solid rgba(255,255,255,0.06)", whiteSpace:"nowrap" }}>{h}</th>
                     ))}</tr>
                   </thead>
@@ -349,23 +542,24 @@ export default function Settings() {
                           <span style={{ background:`${ROLE_COLOR[u.role]}15`, color:ROLE_COLOR[u.role], padding:"3px 10px", borderRadius:99, fontSize:11, fontWeight:600, textTransform:"capitalize" }}>{u.role}</span>
                         </td>
                         <td style={{ padding:"10px 12px" }}>
-                          {u._id !== user?.id ? (
-                            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                              <select
-                                defaultValue={u.role}
-                                onChange={e => setEditRole(r => ({...r, [u._id]: e.target.value}))}
-                                style={{ background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:6, padding:"5px 8px", color:"#e2e8f0", fontSize:12, outline:"none", fontFamily:"inherit" }}>
-                                <option value="viewer">Viewer</option>
-                                <option value="researcher">Researcher</option>
-                                <option value="admin">Admin</option>
-                              </select>
-                              <Btn small onClick={() => handleRoleChange(u._id, editRole[u._id] || u.role)} disabled={savingRole === u._id}>
-                                {savingRole === u._id ? "..." : "Apply"}
-                              </Btn>
-                            </div>
-                          ) : (
-                            <span style={{ color:"#475569", fontSize:12 }}>Logged-in Account</span>
-                          )}
+                          <div style={{ display:"flex", gap:6, alignItems:"center" }}>
+                            <Btn small onClick={() => openEditUser(u)}>Edit</Btn>
+                            {u._id !== user?.id && (
+                              <>
+                                <select
+                                  defaultValue={u.role}
+                                  onChange={e => setEditRole(r => ({...r, [u._id]: e.target.value}))}
+                                  style={{ background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:6, padding:"5px 8px", color:"#e2e8f0", fontSize:12, outline:"none", fontFamily:"inherit" }}>
+                                  <option value="viewer">Viewer</option>
+                                  <option value="researcher">Researcher</option>
+                                  <option value="admin">Admin</option>
+                                </select>
+                                <Btn small onClick={() => handleRoleChange(u._id, editRole[u._id] || u.role)} disabled={savingRole === u._id}>
+                                  {savingRole === u._id ? "..." : "Apply"}
+                                </Btn>
+                              </>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{u.college || "—"}</td>
                         <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12, fontFamily:"monospace" }}>{new Date(u.createdAt).toLocaleDateString()}</td>
@@ -379,9 +573,87 @@ export default function Settings() {
         </div>
       )}
 
+      {/* Edit User Modal */}
+      {showEditUser && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+          <div style={{ background:"#162030", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, padding:24, width:500, maxHeight:"90vh", overflowY:"auto" }}>
+            <h3 style={{ color:"#e2e8f0", fontSize:18, fontWeight:700, margin:"0 0 16px" }}>Edit User Profile</h3>
+            <form onSubmit={handleUpdateUser} style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Full Name</label>
+                <input
+                  required
+                  value={editUserForm.name}
+                  onChange={e => setEditUserForm({...editUserForm, name: e.target.value})}
+                  style={inputStyle}
+                  placeholder="e.g. John Doe"
+                />
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Email</label>
+                <input
+                  required
+                  type="email"
+                  value={editUserForm.email}
+                  onChange={e => setEditUserForm({...editUserForm, email: e.target.value})}
+                  style={inputStyle}
+                  placeholder="e.g. john@example.com"
+                />
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Password (leave blank to keep current)</label>
+                <input
+                  type="password"
+                  value={editUserForm.password}
+                  onChange={e => setEditUserForm({...editUserForm, password: e.target.value})}
+                  style={inputStyle}
+                  placeholder="Minimum 6 characters"
+                />
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Role</label>
+                <select
+                  value={editUserForm.role}
+                  onChange={e => setEditUserForm({...editUserForm, role: e.target.value})}
+                  style={inputStyle}
+                >
+                  <option value="viewer">Viewer</option>
+                  <option value="researcher">Researcher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>College</label>
+                <input
+                  value={editUserForm.college}
+                  onChange={e => setEditUserForm({...editUserForm, college: e.target.value})}
+                  style={inputStyle}
+                  placeholder="e.g. College of Engineering"
+                />
+              </div>
+              <div>
+                <label style={{ display:"flex", alignItems:"center", gap:8, color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>
+                  <input
+                    type="checkbox"
+                    checked={editUserForm.isActive}
+                    onChange={e => setEditUserForm({...editUserForm, isActive: e.target.checked})}
+                    style={{ width:16, height:16 }}
+                  />
+                  Active Account
+                </label>
+              </div>
+              <div style={{ display:"flex", gap:10, marginTop:8 }}>
+                <Btn disabled={updatingUser}>{updatingUser ? "Updating..." : "Update User"}</Btn>
+                <Btn variant="secondary" onClick={() => setShowEditUser(false)}>Cancel</Btn>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Account Info */}
       <div style={{ marginTop:16 }}>
-        <SectionCard title="User Session Profile">
+        <SectionCard title="User Session Profile" action={<Btn small onClick={() => { setShowEditProfile(true); setProfileForm({ name: user?.name || "", email: user?.email || "", college: user?.college || "", role: user?.role || "viewer", password: "" }); }}>Edit Profile</Btn>}>
           <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12 }}>
             {[
               { label:"Full Name", value: user?.name },
@@ -395,6 +667,75 @@ export default function Settings() {
               </div>
             ))}
           </div>
+          
+          {/* Edit Profile Form */}
+          {showEditProfile && (
+            <div style={{ marginTop:20, background:"rgba(34,211,238,0.05)", border:"1px solid rgba(34,211,238,0.2)", borderRadius:8, padding:16 }}>
+              <h4 style={{ color:"#22d3ee", fontSize:14, fontWeight:600, margin:"0 0 12px" }}>Update Your Profile</h4>
+              <form onSubmit={handleUpdateProfile} style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+                <div>
+                  <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Full Name</label>
+                  <input
+                    required
+                    value={profileForm.name}
+                    onChange={e => setProfileForm({...profileForm, name: e.target.value})}
+                    style={inputStyle}
+                    placeholder="e.g. John Doe"
+                  />
+                </div>
+                <div>
+                  <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Email Address</label>
+                  <input
+                    required
+                    type="email"
+                    value={profileForm.email}
+                    onChange={e => setProfileForm({...profileForm, email: e.target.value})}
+                    style={inputStyle}
+                    placeholder="e.g. john@example.com"
+                  />
+                </div>
+                <div>
+                  <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Institutional College</label>
+                  <input
+                    value={profileForm.college}
+                    onChange={e => setProfileForm({...profileForm, college: e.target.value})}
+                    style={inputStyle}
+                    placeholder="e.g. College of Engineering"
+                  />
+                </div>
+                <div>
+                  <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>Role</label>
+                  <select
+                    value={profileForm.role || user?.role || "viewer"}
+                    onChange={e => setProfileForm({...profileForm, role: e.target.value})}
+                    style={inputStyle}
+                  >
+                    <option value="viewer">Viewer</option>
+                    <option value="researcher">Researcher</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </div>
+                <div style={{ gridColumn:"1/-1" }}>
+                  <label style={{ display:"block", color:"#94a3b8", fontSize:11, fontWeight:600, marginBottom:5 }}>New Password (leave blank to keep current)</label>
+                  <input
+                    type="password"
+                    value={profileForm.password}
+                    onChange={e => setProfileForm({...profileForm, password: e.target.value})}
+                    style={inputStyle}
+                    placeholder="Minimum 6 characters"
+                    minLength={6}
+                  />
+                </div>
+                <div style={{ gridColumn:"1/-1", display:"flex", gap:10, marginTop:8 }}>
+                  <Btn disabled={updatingProfile}>{updatingProfile ? "Updating..." : "Update Profile"}</Btn>
+                  <Btn variant="secondary" onClick={() => setShowEditProfile(false)}>Cancel</Btn>
+                </div>
+              </form>
+              <p style={{ color:"#64748b", fontSize:11, marginTop:12, margin:0 }}>
+                💡 Changes will take effect immediately. You may need to refresh the page to see updated information.
+              </p>
+            </div>
+          )}
         </SectionCard>
       </div>
     </div>

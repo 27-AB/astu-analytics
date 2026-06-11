@@ -7,8 +7,8 @@ exports.getAll = async (req, res) => {
     if (status)  query.status = status;
     if (college) query.college = new RegExp(college, "i");
     if (search)  query.$or = [{ title: new RegExp(search, "i") }, { lead: new RegExp(search, "i") }, { location: new RegExp(search, "i") }];
-    const total = await Community.countDocuments(query);
-    const projects = await Community.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(Number(limit));
+    const projects = await Community.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(Number(limit)).maxTimeMS(5000);
+    const total = projects.length;
     res.json({ success: true, total, projects });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -23,16 +23,47 @@ exports.getOne = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const project = await Community.create(req.body);
+    const project = await Community.create({
+      ...req.body,
+      createdBy: req.user.id,
+      createdByName: req.user.name,
+      lastModifiedBy: req.user.id,
+      lastModifiedByName: req.user.name,
+    });
     res.status(201).json({ success: true, project });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 };
 
 exports.update = async (req, res) => {
   try {
-    const project = await Community.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const project = await Community.findById(req.params.id);
     if (!project) return res.status(404).json({ success: false, message: "Not found." });
-    res.json({ success: true, project });
+    
+    // Ownership check: Only admin or project owner can edit
+    const isOwner = project.createdBy && project.createdBy.toString() === req.user.id;
+    const isCollaborator = project.collaborators && project.collaborators.some(c => c.toString() === req.user.id);
+    const isAdmin = req.user.role === "admin";
+    
+    if (!isAdmin && !isOwner && !isCollaborator) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Access denied. Only the project owner, collaborators, or admins can edit this project.",
+        owner: project.createdByName || "Unknown"
+      });
+    }
+    
+    // Update project and track who modified it
+    const updatedProject = await Community.findByIdAndUpdate(
+      req.params.id, 
+      {
+        ...req.body,
+        lastModifiedBy: req.user.id,
+        lastModifiedByName: req.user.name,
+      }, 
+      { new: true, runValidators: true }
+    );
+    
+    res.json({ success: true, project: updatedProject });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 };
 

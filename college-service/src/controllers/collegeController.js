@@ -2,7 +2,7 @@ const { College, Researcher } = require("../models/College");
 
 exports.getColleges = async (req, res) => {
   try {
-    const colleges = await College.find().sort({ name: 1 });
+    const colleges = await College.find().sort({ name: 1 }).maxTimeMS(5000);
     res.json({ success: true, total: colleges.length, colleges });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -13,8 +13,8 @@ exports.getResearchers = async (req, res) => {
     const query = {};
     if (college) query.college = new RegExp(college, "i");
     if (search)  query.$or = [{ name: new RegExp(search, "i") }, { specialization: new RegExp(search, "i") }];
-    const total = await Researcher.countDocuments(query);
-    const researchers = await Researcher.find(query).sort({ publications: -1 }).skip((page - 1) * limit).limit(Number(limit));
+    const researchers = await Researcher.find(query).sort({ publications: -1 }).skip((page - 1) * limit).limit(Number(limit)).maxTimeMS(5000);
+    const total = researchers.length;
     res.json({ success: true, total, researchers });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

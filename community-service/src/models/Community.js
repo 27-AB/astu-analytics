@@ -14,6 +14,12 @@ const communitySchema = new mongoose.Schema({
   tags:         [String],
   summary:      { type: String },
   impact:       { type: String },
+  // Ownership & Collaboration Fields
+  createdBy:    { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+  createdByName:{ type: String, default: "" },
+  collaborators:[{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+  lastModifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+  lastModifiedByName: { type: String, default: "" },
 }, { timestamps: true });
 
 module.exports = mongoose.model("Community", communitySchema);

@@ -12,11 +12,12 @@ exports.getAll = async (req, res) => {
       { lead:  new RegExp(search, "i") },
       { tags:  new RegExp(search, "i") },
     ];
-    const total = await Research.countDocuments(query);
     const projects = await Research.find(query)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
-      .limit(Number(limit));
+      .limit(Number(limit))
+      .maxTimeMS(5000);
+    const total = projects.length;
     res.json({ success: true, total, page: Number(page), projects });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -31,17 +32,272 @@ exports.getOne = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const project = await Research.create(req.body);
+    const attachments = req.files ? req.files.map(file => ({
+      filename: file.filename,
+      originalName: file.originalname,
+      mimetype: file.mimetype,
+      size: file.size,
+      uploadDate: new Date()
+    })) : [];
+
+    // Parse collaborators from JSON string if present
+    let collaborators = [];
+    if (req.body.collaborators) {
+      try {
+        collaborators = JSON.parse(req.body.collaborators);
+      } catch (e) {
+        console.error("Failed to parse collaborators:", e);
+      }
+    }
+
+    const project = await Research.create({
+      ...req.body,
+      attachments,
+      collaborators,
+      createdBy: req.user.id,
+      createdByName: req.user.name,
+      lastModifiedBy: req.user.id,
+      lastModifiedByName: req.user.name,
+    });
     res.status(201).json({ success: true, project });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 };
 
 exports.update = async (req, res) => {
   try {
-    const project = await Research.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const project = await Research.findById(req.params.id);
     if (!project) return res.status(404).json({ success: false, message: "Not found." });
-    res.json({ success: true, project });
+    
+    // Permission check: Admin can edit any, researcher can edit own or where they're high-priority collaborator
+    const isOwner = project.createdBy && project.createdBy.toString() === req.user.id;
+    const isAdmin = req.user.role === "admin";
+    
+    // Check if user is a collaborator with high priority
+    let collaboratorPriority = null;
+    if (project.collaborators && project.collaborators.length > 0) {
+      const collab = project.collaborators.find(c => c.userId && c.userId.toString() === req.user.id);
+      if (collab) {
+        collaboratorPriority = collab.priority;
+      }
+    }
+    
+    const isHighPriorityCollaborator = collaboratorPriority === "high";
+    const canEdit = isAdmin || isOwner || isHighPriorityCollaborator;
+    
+    if (!canEdit) {
+      return res.status(403).json({ 
+        success: false, 
+        message: collaboratorPriority 
+          ? `Access denied. Only high-priority collaborators can edit. Your priority: ${collaboratorPriority}`
+          : "Access denied. Only the owner, high-priority collaborators, or admins can edit this project.",
+        owner: project.createdByName || "Unknown",
+        yourRole: req.user.role,
+        yourPriority: collaboratorPriority || "none"
+      });
+    }
+    
+    // Handle file attachments
+    let attachments = project.attachments || [];
+    if (req.files && req.files.length > 0) {
+      const newAttachments = req.files.map(file => ({
+        filename: file.filename,
+        originalName: file.originalname,
+        mimetype: file.mimetype,
+        size: file.size,
+        uploadDate: new Date()
+      }));
+      attachments = [...attachments, ...newAttachments];
+    }
+
+    // Parse collaborators from JSON string if present
+    let collaborators = project.collaborators || [];
+    if (req.body.collaborators) {
+      try {
+        collaborators = JSON.parse(req.body.collaborators);
+      } catch (e) {
+        console.error("Failed to parse collaborators:", e);
+        collaborators = project.collaborators || [];
+      }
+    }
+
+    // Update project and track who modified it
+    const updatedProject = await Research.findByIdAndUpdate(
+      req.params.id,
+      {
+        ...req.body,
+        attachments,
+        collaborators,
+        lastModifiedBy: req.user.id,
+        lastModifiedByName: req.user.name,
+      },
+      { new: true, runValidators: true }
+    );
+    
+    res.json({ 
+      success: true, 
+      project: updatedProject, 
+      editedBy: req.user.name, 
+      role: req.user.role,
+      permission: isAdmin ? "admin" : isOwner ? "owner" : "high-priority collaborator"
+    });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
+};
+
+// Add collaborator to project (only owner or admin can add)
+exports.addCollaborator = async (req, res) => {
+  try {
+    const { userId, priority } = req.body;
+    
+    if (!userId || !priority) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "userId and priority are required" 
+      });
+    }
+    
+    if (!["high", "medium", "low"].includes(priority)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Priority must be 'high', 'medium', or 'low'" 
+      });
+    }
+    
+    const project = await Research.findById(req.params.id);
+    if (!project) return res.status(404).json({ success: false, message: "Project not found." });
+    
+    // Only owner or admin can add collaborators
+    const isOwner = project.createdBy && project.createdBy.toString() === req.user.id;
+    const isAdmin = req.user.role === "admin";
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Only the project owner or admin can add collaborators." 
+      });
+    }
+    
+    // Check if already a collaborator
+    const existingCollab = project.collaborators.find(c => c.userId && c.userId.toString() === userId);
+    if (existingCollab) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "User is already a collaborator. Use update endpoint to change priority." 
+      });
+    }
+    
+    // Add collaborator
+    project.collaborators.push({ userId, priority });
+    project.lastModifiedBy = req.user.id;
+    project.lastModifiedByName = req.user.name;
+    await project.save();
+    
+    res.json({ 
+      success: true, 
+      message: `Collaborator added with ${priority} priority`,
+      project 
+    });
+  } catch (err) { 
+    res.status(400).json({ success: false, message: err.message }); 
+  }
+};
+
+// Update collaborator priority (only owner or admin)
+exports.updateCollaborator = async (req, res) => {
+  try {
+    const { userId, priority } = req.body;
+    
+    if (!userId || !priority) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "userId and priority are required" 
+      });
+    }
+    
+    if (!["high", "medium", "low"].includes(priority)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Priority must be 'high', 'medium', or 'low'" 
+      });
+    }
+    
+    const project = await Research.findById(req.params.id);
+    if (!project) return res.status(404).json({ success: false, message: "Project not found." });
+    
+    // Only owner or admin can update collaborators
+    const isOwner = project.createdBy && project.createdBy.toString() === req.user.id;
+    const isAdmin = req.user.role === "admin";
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Only the project owner or admin can update collaborators." 
+      });
+    }
+    
+    // Find and update collaborator
+    const collab = project.collaborators.find(c => c.userId && c.userId.toString() === userId);
+    if (!collab) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "User is not a collaborator on this project." 
+      });
+    }
+    
+    collab.priority = priority;
+    project.lastModifiedBy = req.user.id;
+    project.lastModifiedByName = req.user.name;
+    await project.save();
+    
+    res.json({ 
+      success: true, 
+      message: `Collaborator priority updated to ${priority}`,
+      project 
+    });
+  } catch (err) { 
+    res.status(400).json({ success: false, message: err.message }); 
+  }
+};
+
+// Remove collaborator (only owner or admin)
+exports.removeCollaborator = async (req, res) => {
+  try {
+    const { userId } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "userId is required" 
+      });
+    }
+    
+    const project = await Research.findById(req.params.id);
+    if (!project) return res.status(404).json({ success: false, message: "Project not found." });
+    
+    // Only owner or admin can remove collaborators
+    const isOwner = project.createdBy && project.createdBy.toString() === req.user.id;
+    const isAdmin = req.user.role === "admin";
+    
+    if (!isOwner && !isAdmin) {
+      return res.status(403).json({ 
+        success: false, 
+        message: "Only the project owner or admin can remove collaborators." 
+      });
+    }
+    
+    // Remove collaborator
+    project.collaborators = project.collaborators.filter(c => c.userId && c.userId.toString() !== userId);
+    project.lastModifiedBy = req.user.id;
+    project.lastModifiedByName = req.user.name;
+    await project.save();
+    
+    res.json({ 
+      success: true, 
+      message: "Collaborator removed",
+      project 
+    });
+  } catch (err) { 
+    res.status(400).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.remove = async (req, res) => {
@@ -53,8 +309,11 @@ exports.remove = async (req, res) => {
 
 exports.seed = async (req, res) => {
   try {
-    // Delete existing research projects to allow clean force re-seeding
-    await Research.deleteMany({});
+    // Check if projects already exist
+    const count = await Research.countDocuments();
+    if (count > 0) {
+      return res.json({ success: true, message: `Already have ${count} research projects.` });
+    }
 
     await Research.insertMany([
       { title: "AI-Powered Crop Disease Detection Using Deep Learning", lead: "Dr. Tesfaye Worku", college: "College of Electrical Engineering & Computing", department: "Computer Science & Engineering", status: "active", startDate: "2023-02-01", endDate: "2025-01-31", fundingETB: 850000, fundingSource: "Ethiopian Science and Technology Commission", tags: ["AI", "agriculture", "deep learning"], summary: "Developing a mobile-first deep learning system to detect crop diseases from smartphone photos, targeting smallholder farmers in Oromia region.", publications: 3, teamSize: 7, centerOfExcellence: "Center of Excellence for Allied Sciences (CoE-AS)" },

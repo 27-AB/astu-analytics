@@ -21,6 +21,8 @@ const ReportCard = ({ title, desc, icon, color, onGenerate, loading }) => (
 export default function Reports() {
   const { token } = useAuth();
   const [pdfLoading, setPdfLoading] = useState(false);
+  const [researchLoading, setResearchLoading] = useState(false);
+  const [communityLoading, setCommunityLoading] = useState(false);
   const [csvLoading, setCsvLoading] = useState(false);
   const [msg,        setMsg]        = useState("");
 
@@ -37,6 +39,36 @@ export default function Reports() {
       setMsg("success:Report downloaded successfully.");
     } catch(e){ setMsg("error:" + e.message); }
     finally { setPdfLoading(false); }
+  };
+
+  const downloadResearchPDF = async () => {
+    setResearchLoading(true); setMsg("");
+    try {
+      const res = await fetch(`${API}/api/report/research`, { headers:{ Authorization:`Bearer ${token}` }});
+      if (!res.ok) throw new Error("Research report generation failed. Ensure all services are running.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `ASTU_Research_Summary_${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click(); URL.revokeObjectURL(url);
+      setMsg("success:Research summary downloaded successfully.");
+    } catch(e){ setMsg("error:" + e.message); }
+    finally { setResearchLoading(false); }
+  };
+
+  const downloadCommunityPDF = async () => {
+    setCommunityLoading(true); setMsg("");
+    try {
+      const res = await fetch(`${API}/api/report/community`, { headers:{ Authorization:`Bearer ${token}` }});
+      if (!res.ok) throw new Error("Community report generation failed. Ensure all services are running.");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `ASTU_Community_Impact_${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click(); URL.revokeObjectURL(url);
+      setMsg("success:Community impact report downloaded successfully.");
+    } catch(e){ setMsg("error:" + e.message); }
+    finally { setCommunityLoading(false); }
   };
 
   const downloadCSV = async () => {
@@ -70,7 +102,7 @@ export default function Reports() {
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))", gap:18, marginBottom:32 }}>
         <ReportCard
           title="Full Analytics Report (PDF)"
-          desc="A comprehensive report covering all active research and community projects, funding distribution, college statistics, and researcher data. Formatted for official university documentation."
+          desc="Comprehensive multi-page report with executive summary, key insights, project status analysis with visual bars, college distribution charts, and complete project portfolios. Includes calculated metrics like completion rates, investment efficiency, and impact indicators. Features professional formatting with cover page and conclusion."
           icon="📄" color="#ef4444"
           onGenerate={downloadPDF} loading={pdfLoading}
         />
@@ -82,15 +114,15 @@ export default function Reports() {
         />
         <ReportCard
           title="Research Summary (PDF)"
-          desc="A focused report on research activities — covering funding sources, publication counts, team compositions, and project status. Suitable for submission to the Research Excellence Office."
+          desc="Advanced research excellence report featuring funding source analysis, departmental performance comparisons, center of excellence achievements, publication productivity metrics, team collaboration insights, and detailed project inventory with keywords. Includes research excellence indicators and funding efficiency calculations."
           icon="🔬" color="#38bdf8"
-          onGenerate={downloadPDF} loading={pdfLoading}
+          onGenerate={downloadResearchPDF} loading={researchLoading}
         />
         <ReportCard
           title="Community Impact Report (PDF)"
-          desc="Details the university's community outreach performance, including beneficiaries reached, volunteer involvement, geographic coverage, and budget utilisation across all active programmes."
+          desc="Comprehensive social impact assessment featuring beneficiary demographics, cost-per-beneficiary analysis, volunteer engagement metrics with impact ratios, geographic distribution mapping, budget utilization by category and status, top volunteer-driven initiatives, and complete project directory with impact statements."
           icon="👥" color="#a78bfa"
-          onGenerate={downloadPDF} loading={pdfLoading}
+          onGenerate={downloadCommunityPDF} loading={communityLoading}
         />
       </div>
 

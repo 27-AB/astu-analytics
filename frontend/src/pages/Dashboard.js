@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAnalytics } from "../hooks/useAnalytics";
 import { useAuth } from "../context/AuthContext";
@@ -105,6 +105,46 @@ export default function Dashboard() {
   const { data, loading, error } = useAnalytics();
   const { token, user } = useAuth();
   const navigate = useNavigate();
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [profileForm, setProfileForm] = useState({ name: "", email: "", college: "", role: "viewer", password: "" });
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState("");
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setUpdatingProfile(true);
+    setProfileMsg("");
+    try {
+      const authAPI = getServiceUrl("auth");
+      const res = await fetch(`${authAPI}/auth/me`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify(profileForm)
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message);
+      
+      setProfileMsg("success:Profile updated successfully!");
+      setShowProfileEdit(false);
+      setProfileForm({ name: "", email: "", college: "", role: "viewer", password: "" });
+      
+      // Refresh user data
+      const userRes = await fetch(`${authAPI}/auth/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (userRes.ok) {
+        const userData = await userRes.json();
+        if (userData.success && userData.user) {
+          localStorage.setItem('user', JSON.stringify(userData.user));
+          window.location.reload();
+        }
+      }
+      
+      setTimeout(() => setProfileMsg(""), 3000);
+    } catch (e) {
+      setProfileMsg("error:" + e.message);
+    } finally { setUpdatingProfile(false); }
+  };
 
   const goTo = (path, params = {}) => {
     const search = new URLSearchParams(
@@ -123,14 +163,28 @@ export default function Dashboard() {
       });
   };
 
-  const handleReport = () => {
-    fetch(`${API}/api/report`, { headers:{ Authorization:`Bearer ${token}` }})
-      .then(r => r.blob()).then(blob => {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a"); a.href = url;
-        a.download = `ASTU_Report_${new Date().toISOString().slice(0,10)}.pdf`;
-        a.click(); URL.revokeObjectURL(url);
+  const handleReport = async () => {
+    try {
+      const response = await fetch(`${API}/api/report`, { 
+        headers:{ Authorization:`Bearer ${token}` }
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Report generation failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `ASTU_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Report generation error:', error);
+      alert(`Failed to generate report: ${error.message}. Please ensure all backend services are running and you are authenticated.`);
+    }
   };
 
   if (loading) return <Loader />;
@@ -199,10 +253,59 @@ export default function Dashboard() {
           <p style={{ color:"#64748b", fontSize:13, margin:"4px 0 0" }}>Welcome back, {user?.name} · {new Date().toLocaleDateString("en-ET",{dateStyle:"long"})}</p>
         </div>
         <div style={{ display:"flex", gap:10 }}>
+          <button onClick={() => { setShowProfileEdit(true); setProfileForm({ name: user?.name || "", email: user?.email || "", college: user?.college || "", role: user?.role || "viewer", password: "" }); }} style={{ background:"rgba(34,211,238,0.12)", border:"1px solid rgba(34,211,238,0.25)", borderRadius:8, padding:"9px 16px", color:"#22d3ee", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>👤 Edit Profile</button>
           <button onClick={handleExport} style={{ background:"rgba(34,197,94,0.12)", border:"1px solid rgba(34,197,94,0.25)", borderRadius:8, padding:"9px 16px", color:"#4ade80", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>⬇ Export CSV</button>
           <button onClick={handleReport} style={{ background:"rgba(239,68,68,0.12)", border:"1px solid rgba(239,68,68,0.25)", borderRadius:8, padding:"9px 16px", color:"#f87171", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>📄 Generate PDF</button>
         </div>
       </div>
+
+      {/* Profile Edit Modal */}
+      {showProfileEdit && (
+        <div style={{ position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.7)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:1000 }}>
+          <div style={{ background:"#162030", border:"1px solid rgba(255,255,255,0.1)", borderRadius:12, padding:24, width:450, maxWidth:"90%" }}>
+            <h3 style={{ color:"#e2e8f0", fontSize:18, fontWeight:700, margin:"0 0 16px" }}>Edit Profile</h3>
+            {profileMsg && (
+              <div style={{ background:profileMsg.startsWith("success")?"rgba(34,197,94,0.1)":"rgba(239,68,68,0.1)", border:`1px solid ${profileMsg.startsWith("success")?"rgba(34,197,94,0.3)":"rgba(239,68,68,0.3)"}`, borderRadius:8, padding:"10px 14px", marginBottom:16, color:profileMsg.startsWith("success")?"#4ade80":"#f87171", fontSize:13 }}>
+                {profileMsg.replace(/^(success|error):/, "")}
+              </div>
+            )}
+            <form onSubmit={handleUpdateProfile} style={{ display:"grid", gap:12 }}>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:6 }}>Full Name</label>
+                <input required value={profileForm.name} onChange={e => setProfileForm({...profileForm, name: e.target.value})} style={{ width:"100%", background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} placeholder="e.g. John Doe" />
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:6 }}>Email Address</label>
+                <input required type="email" value={profileForm.email} onChange={e => setProfileForm({...profileForm, email: e.target.value})} style={{ width:"100%", background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} placeholder="e.g. john@example.com" />
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:6 }}>Institutional College</label>
+                <input value={profileForm.college} onChange={e => setProfileForm({...profileForm, college: e.target.value})} style={{ width:"100%", background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} placeholder="e.g. College of Engineering" />
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:6 }}>Role</label>
+                <select value={profileForm.role || user?.role || "viewer"} onChange={e => setProfileForm({...profileForm, role: e.target.value})} style={{ width:"100%", background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }}>
+                  <option value="viewer">Viewer</option>
+                  <option value="researcher">Researcher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div>
+                <label style={{ display:"block", color:"#94a3b8", fontSize:12, fontWeight:600, marginBottom:6 }}>New Password (leave blank to keep current)</label>
+                <input type="password" value={profileForm.password} onChange={e => setProfileForm({...profileForm, password: e.target.value})} style={{ width:"100%", background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 12px", color:"#e2e8f0", fontSize:13, outline:"none" }} placeholder="Minimum 6 characters" minLength={6} />
+              </div>
+              <div style={{ display:"flex", gap:10, marginTop:8 }}>
+                <button type="submit" disabled={updatingProfile} style={{ flex:1, background:"rgba(34,211,238,0.15)", border:"1px solid rgba(34,211,238,0.3)", borderRadius:8, padding:"10px 16px", color:"#22d3ee", fontSize:13, fontWeight:600, cursor:updatingProfile?"wait":"pointer", fontFamily:"inherit", opacity:updatingProfile?0.6:1 }}>
+                  {updatingProfile ? "Updating..." : "Update Profile"}
+                </button>
+                <button type="button" onClick={() => setShowProfileEdit(false)} style={{ flex:1, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, padding:"10px 16px", color:"#94a3b8", fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Stat cards — all clickable */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(5,1fr)", gap:16, marginBottom:24 }}>

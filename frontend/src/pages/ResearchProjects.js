@@ -27,7 +27,7 @@ const CENTERS_OF_EXCELLENCE = [
 const EMPTY_FORM = {
   title: "", lead: "", college: "", department: "", status: "active",
   startDate: "", endDate: "", fundingETB: 0, fundingSource: "ASTU Internal",
-  tags: "", summary: "", centerOfExcellence: "None"
+  tags: "", summary: "", centerOfExcellence: "None", collaborators: []
 };
 
 export default function ResearchProjects() {
@@ -58,6 +58,8 @@ export default function ResearchProjects() {
   const [saving,   setSaving]   = useState(false);
   const [saveMsg,  setSaveMsg]  = useState("");
   const [form,     setForm]     = useState(EMPTY_FORM);
+  const [allResearchers, setAllResearchers] = useState([]);
+  const [attachments, setAttachments] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -84,6 +86,20 @@ export default function ResearchProjects() {
   }, [location.search]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (token && (user?.role === "admin" || user?.role === "researcher")) {
+      const authAPI = getServiceUrl("auth");
+      fetch(`${authAPI}/auth/researchers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(d => {
+          if (d.success) setAllResearchers(d.researchers || []);
+        })
+        .catch(console.error);
+    }
+  }, [token, user]);
 
   // Keep URL in sync with filter controls
   useEffect(() => {
@@ -128,27 +144,60 @@ export default function ResearchProjects() {
     e.preventDefault();
     setSaving(true); setSaveMsg("");
     try {
-      const body = {
-        ...form,
-        fundingETB: Number(form.fundingETB) || 0,
-        tags: form.tags ? form.tags.split(",").map(t => t.trim()).filter(Boolean) : [],
-      };
+      // Convert collaborators to new structure with userId and priority
+      const collaborators = (form.collaborators || []).map(c => {
+        if (typeof c === 'object' && c.userId) {
+          return { userId: c.userId, priority: c.priority || 'medium' };
+        }
+        return { userId: c, priority: 'medium' };
+      });
+
+      // Use FormData for file uploads
+      const formData = new FormData();
+      formData.append("title", form.title);
+      formData.append("lead", form.lead);
+      formData.append("college", form.college);
+      formData.append("department", form.department);
+      formData.append("status", form.status);
+      formData.append("startDate", form.startDate);
+      if (form.endDate) formData.append("endDate", form.endDate);
+      formData.append("fundingETB", Number(form.fundingETB) || 0);
+      formData.append("fundingSource", form.fundingSource);
+      if (form.tags) formData.append("tags", form.tags);
+      if (form.summary) formData.append("summary", form.summary);
+      formData.append("publications", Number(form.publications) || 0);
+      formData.append("teamSize", Number(form.teamSize) || 1);
+      if (form.externalLink) formData.append("externalLink", form.externalLink);
+      formData.append("centerOfExcellence", form.centerOfExcellence);
+      formData.append("collaborators", JSON.stringify(collaborators));
+
+      // Append files
+      attachments.forEach(file => {
+        formData.append("attachments", file);
+      });
+
       const url    = editing ? `${API}/projects/${editing._id}` : `${API}/projects`;
       const method = editing ? "PUT" : "POST";
       const res = await fetch(url, {
         method,
         headers: {
-          "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify(body)
+        body: formData
       });
       const d = await res.json();
-      if (!res.ok) throw new Error(d.message || "Save failed");
+      if (!res.ok) {
+        // Show ownership error clearly
+        if (res.status === 403 && d.owner) {
+          throw new Error(`Access denied. This project belongs to ${d.owner}. Only the owner or an admin can edit it.`);
+        }
+        throw new Error(d.message || "Save failed");
+      }
       setSaveMsg("✅ Project saved successfully!");
       setTimeout(() => {
         setShowForm(false); setEditing(null);
         setForm(EMPTY_FORM); setSaveMsg("");
+        setAttachments([]);
         load();
       }, 1000);
     } catch (e) {
@@ -175,13 +224,15 @@ export default function ResearchProjects() {
 
   const openEdit = (p) => {
     setEditing(p);
-    setForm({ ...p, tags: (p.tags || []).join(", "), fundingETB: p.fundingETB || 0, centerOfExcellence: p.centerOfExcellence || "None" });
+    // Convert collaborators from new structure (userId + priority) to old structure for backward compatibility
+    const collaborators = p.collaborators ? p.collaborators.map(c => c.userId || c) : [];
+    setForm({ ...p, tags: (p.tags || []).join(", "), fundingETB: p.fundingETB || 0, centerOfExcellence: p.centerOfExcellence || "None", collaborators });
     setShowForm(true);
   };
 
   const openAdd = () => {
     setEditing(null);
-    setForm({ ...EMPTY_FORM, status: activeTab === "proposal_pipeline" ? "under_review" : "active" });
+    setForm({ ...EMPTY_FORM, status: activeTab === "proposal_pipeline" ? "under_review" : "active", collaborators: [] });
     setShowForm(true);
   };
 
@@ -317,7 +368,22 @@ export default function ResearchProjects() {
                         onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                         style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                         <td style={{ padding: "10px 12px", color: "#e2e8f0", fontWeight: 500, maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={p.title}>{p.title}</td>
-                        <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>{p.lead}</td>
+                        <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>
+                          <div>{p.lead}</div>
+                          {(() => {
+                            const collaboratorNames = p.collaborators 
+                              ? p.collaborators.map(c => {
+                                  const researcher = allResearchers.find(r => r._id === (c.userId || c));
+                                  return researcher ? researcher.name : null;
+                                }).filter(Boolean)
+                              : [];
+                            return collaboratorNames.length > 0 ? (
+                              <div style={{ color: "#22d3ee", fontSize: 10, marginTop: 2, display: "flex", alignItems: "center", gap: 3 }} title={`Collaborators: ${collaboratorNames.join(", ")}`}>
+                                👥 +{collaboratorNames.length} {collaboratorNames.length === 1 ? "collab" : "collabs"}
+                              </div>
+                            ) : null;
+                          })()}
+                        </td>
                         <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12 }}>
                           <div>{p.college?.replace("College of ", "")}</div>
                           {p.centerOfExcellence && p.centerOfExcellence !== "None" && (
@@ -326,16 +392,37 @@ export default function ResearchProjects() {
                         </td>
                         <td style={{ padding: "10px 12px" }}><Badge status={p.status} /></td>
                         <td style={{ padding: "10px 12px", color: "#f59e0b", fontFamily: "monospace", fontSize: 12 }}>{(p.fundingETB || 0).toLocaleString()}</td>
-                        <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12, fontFamily: "monospace" }}>{p.startDate}</td>
-                        <td style={{ padding: "10px 12px" }}>
-                          {(user?.role === "admin" || user?.role === "researcher") && (
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <Btn small variant="secondary" onClick={() => openEdit(p)}>Edit</Btn>
-                              {user?.role === "admin" && (
-                                <Btn small variant="danger" onClick={() => handleDelete(p._id)}>Delete</Btn>
-                              )}
+                        <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12, fontFamily: "monospace" }}>
+                          <div>{p.startDate}</div>
+                          {p.createdByName && (
+                            <div style={{ color: "#475569", fontSize: 10, marginTop: 2 }}>👤 {p.createdByName}</div>
+                          )}
+                          {p.attachments && p.attachments.length > 0 && (
+                            <div style={{ marginTop: 4 }}>
+                              <div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 600, marginBottom: 2 }}>📎 Files:</div>
+                              {p.attachments.map((att, idx) => (
+                                <a
+                                  key={idx}
+                                  href={`${API}/uploads/${att.filename}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  style={{ display: "block", color: "#22d3ee", fontSize: 10, textDecoration: "none", marginBottom: 1 }}
+                                >
+                                  {att.originalName}
+                                </a>
+                              ))}
                             </div>
                           )}
+                        </td>
+                        <td style={{ padding: "10px 12px" }}>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {(user?.role === "admin" || p.createdBy === user?.id || (p.collaborators && p.collaborators.some(c => c.userId === user?.id))) && (
+                              <Btn small onClick={() => { setEditing(p); setForm({ ...p, collaborators: p.collaborators || [] }); setAttachments([]); setShowForm(true); }}>Edit</Btn>
+                            )}
+                            {user?.role === "admin" && (
+                              <Btn small variant="danger" onClick={() => handleDelete(p._id)}>Delete</Btn>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -378,7 +465,24 @@ export default function ResearchProjects() {
                         {p.centerOfExcellence && p.centerOfExcellence !== "None" && (
                           <div style={{ color: "#22d3ee", fontSize: 10, margin: "0 0 8px", fontWeight: 600 }}>🏛️ {p.centerOfExcellence.replace("Center of Excellence for ", "").split(" (")[0]}</div>
                         )}
-                        
+
+                        {p.attachments && p.attachments.length > 0 && (
+                          <div style={{ margin: "0 0 8px" }}>
+                            <div style={{ color: "#94a3b8", fontSize: 10, fontWeight: 600, marginBottom: 4 }}>📎 Attachments:</div>
+                            {p.attachments.map((att, idx) => (
+                              <a
+                                key={idx}
+                                href={`${API}/uploads/${att.filename}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                style={{ display: "block", color: "#22d3ee", fontSize: 10, textDecoration: "none", marginBottom: 2 }}
+                              >
+                                {att.originalName}
+                              </a>
+                            ))}
+                          </div>
+                        )}
+
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 10, marginTop: 8 }}>
                           <span style={{ color: "#f59e0b", fontSize: 12, fontWeight: 600, fontFamily: "monospace" }}>{fmtETB(p.fundingETB)}</span>
                           
@@ -510,6 +614,139 @@ export default function ResearchProjects() {
               <div style={{ gridColumn: "1/-1" }}>
                 <label style={labelStyle}>Proposal Summary</label>
                 <textarea value={form.summary} onChange={e => setForm(f => ({ ...f, summary: e.target.value }))} rows={3} style={{ ...inputStyle, resize: "vertical" }} placeholder="Brief description of the research goal..." />
+              </div>
+
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={labelStyle}>Collaborators (Select other researchers and set priority)</label>
+                <div style={{ 
+                  background: "#0f1824", 
+                  border: "1px solid rgba(255,255,255,0.1)", 
+                  borderRadius: 8, 
+                  padding: 12, 
+                  maxHeight: 200, 
+                  overflowY: "auto" 
+                }}>
+                  {allResearchers.map(r => {
+                    const isOwner = editing ? (editing.createdBy === r._id) : (user?.id === r._id);
+                    if (isOwner) return null;
+                    
+                    // Check if this researcher is already a collaborator
+                    const existingCollab = form.collaborators && form.collaborators.find(c => 
+                      typeof c === 'object' ? c.userId === r._id : c === r._id
+                    );
+                    const isChecked = !!existingCollab;
+                    const priority = existingCollab && typeof existingCollab === 'object' ? existingCollab.priority : 'medium';
+                    
+                    return (
+                      <div key={r._id} style={{ 
+                        display: "flex", 
+                        alignItems: "center", 
+                        justifyContent: "space-between",
+                        padding: "8px 0",
+                        borderBottom: "1px solid rgba(255,255,255,0.05)"
+                      }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 8, color: "#e2e8f0", fontSize: 12, cursor: "pointer" }}>
+                          <input 
+                            type="checkbox" 
+                            checked={isChecked}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setForm(f => {
+                                const collabs = f.collaborators || [];
+                                if (checked) {
+                                  return {
+                                    ...f,
+                                    collaborators: [...collabs, { userId: r._id, priority: 'medium' }]
+                                  };
+                                } else {
+                                  return {
+                                    ...f,
+                                    collaborators: collabs.filter(c => 
+                                      typeof c === 'object' ? c.userId !== r._id : c !== r._id
+                                    )
+                                  };
+                                }
+                              });
+                            }}
+                          />
+                          {r.name}
+                        </label>
+                        {isChecked && (
+                          <select
+                            value={priority}
+                            onChange={(e) => {
+                              setForm(f => {
+                                const collabs = f.collaborators || [];
+                                return {
+                                  ...f,
+                                  collaborators: collabs.map(c => {
+                                    if (typeof c === 'object' && c.userId === r._id) {
+                                      return { ...c, priority: e.target.value };
+                                    }
+                                    return c;
+                                  })
+                                };
+                              });
+                            }}
+                            style={{ 
+                              background: "#162030", 
+                              border: "1px solid rgba(255,255,255,0.1)", 
+                              borderRadius: 4, 
+                              padding: "4px 8px", 
+                              color: "#94a3b8", 
+                              fontSize: 11, 
+                              outline: "none" 
+                            }}
+                          >
+                            <option value="high">High Priority</option>
+                            <option value="medium">Medium Priority</option>
+                            <option value="low">Low Priority</option>
+                          </select>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {allResearchers.filter(r => editing ? (editing.createdBy !== r._id) : (user?.id !== r._id)).length === 0 && (
+                    <div style={{ color: "#64748b", fontSize: 12 }}>No other researchers found.</div>
+                  )}
+                </div>
+              </div>
+
+              <div style={{ gridColumn: "1/-1" }}>
+                <label style={labelStyle}>File Attachments (PDF, Images, Documents - Max 10MB each)</label>
+                <input
+                  type="file"
+                  multiple
+                  accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files);
+                    setAttachments(files);
+                  }}
+                  style={{ width: "100%", background: "#0f1824", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 8, padding: "10px 12px", color: "#e2e8f0", fontSize: 13, outline: "none" }}
+                />
+                {attachments.length > 0 && (
+                  <div style={{ marginTop: 8, color: "#22d3ee", fontSize: 12 }}>
+                    {attachments.length} file(s) selected: {attachments.map(f => f.name).join(", ")}
+                  </div>
+                )}
+                {editing && editing.attachments && editing.attachments.length > 0 && (
+                  <div style={{ marginTop: 12 }}>
+                    <div style={{ color: "#94a3b8", fontSize: 11, fontWeight: 600, marginBottom: 8 }}>Existing Attachments:</div>
+                    {editing.attachments.map((att, idx) => (
+                      <div key={idx} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "rgba(255,255,255,0.03)", borderRadius: 6, padding: "8px 12px", marginBottom: 6 }}>
+                        <span style={{ color: "#e2e8f0", fontSize: 12 }}>📎 {att.originalName}</span>
+                        <a
+                          href={`${API}/uploads/${att.filename}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          style={{ color: "#22d3ee", fontSize: 11, textDecoration: "none" }}
+                        >
+                          Download
+                        </a>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div style={{ gridColumn: "1/-1", display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 8 }}>

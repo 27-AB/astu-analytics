@@ -31,7 +31,8 @@ export default function CommunityProjects() {
   
   const [showForm, setShowForm] = useState(false);
   const [editing,  setEditing]  = useState(null);
-  const [form,     setForm]     = useState({ title:"", lead:"", college:"", location:"Adama", status:"active", startDate:"", endDate:"", budgetETB:0, beneficiaries:0, volunteers:0, tags:"", summary:"", impact:"" });
+  const [form,     setForm]     = useState({ title:"", lead:"", college:"", location:"Adama", status:"active", startDate:"", endDate:"", budgetETB:0, beneficiaries:0, volunteers:0, tags:"", summary:"", impact:"", collaborators:[] });
+  const [allResearchers, setAllResearchers] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -46,6 +47,20 @@ export default function CommunityProjects() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    if (token && (user?.role === "admin" || user?.role === "researcher")) {
+      const authAPI = getServiceUrl("auth");
+      fetch(`${authAPI}/auth/researchers`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(d => {
+          if (d.success) setAllResearchers(d.researchers || []);
+        })
+        .catch(console.error);
+    }
+  }, [token, user]);
+
   const handleSeed = async () => {
     await fetch(`${API}/community-projects/seed`, { method:"POST", headers:{ Authorization:`Bearer ${token}` }});
     load();
@@ -57,15 +72,34 @@ export default function CommunityProjects() {
     load();
   };
 
+  const [saveMsg, setSaveMsg] = useState("");
+
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const body = { ...form, budgetETB: Number(form.budgetETB)||0, beneficiaries: Number(form.beneficiaries)||0, volunteers: Number(form.volunteers)||0, tags: form.tags ? form.tags.split(",").map(t=>t.trim()).filter(Boolean) : [] };
-    const url    = editing ? `${API}/community-projects/${editing._id}` : `${API}/community-projects`;
-    const method = editing ? "PUT" : "POST";
-    await fetch(url, { method, headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body: JSON.stringify(body) });
-    setShowForm(false); setEditing(null);
-    setForm({ title:"",lead:"",college:"",location:"Adama",status:"active",startDate:"",endDate:"",budgetETB:0,beneficiaries:0,volunteers:0,tags:"",summary:"",impact:"" });
-    load();
+    setSaveMsg("");
+    try {
+      const body = { ...form, budgetETB: Number(form.budgetETB)||0, beneficiaries: Number(form.beneficiaries)||0, volunteers: Number(form.volunteers)||0, tags: form.tags ? form.tags.split(",").map(t=>t.trim()).filter(Boolean) : [] };
+      const url    = editing ? `${API}/community-projects/${editing._id}` : `${API}/community-projects`;
+      const method = editing ? "PUT" : "POST";
+      const res = await fetch(url, { method, headers:{ "Content-Type":"application/json", Authorization:`Bearer ${token}` }, body: JSON.stringify(body) });
+      const d = await res.json();
+      if (!res.ok) {
+        // Show ownership error clearly
+        if (res.status === 403 && d.owner) {
+          throw new Error(`Access denied. This project belongs to ${d.owner}. Only the owner or an admin can edit it.`);
+        }
+        throw new Error(d.message || "Save failed");
+      }
+      setSaveMsg("✅ Project saved successfully!");
+      setTimeout(() => {
+        setShowForm(false); setEditing(null);
+        setForm({ title:"",lead:"",college:"",location:"Adama",status:"active",startDate:"",endDate:"",budgetETB:0,beneficiaries:0,volunteers:0,tags:"",summary:"",impact:"" });
+        setSaveMsg("");
+        load();
+      }, 1000);
+    } catch (e) {
+      setSaveMsg("❌ " + e.message);
+    }
   };
 
   const openEdit = (p) => {
@@ -183,14 +217,22 @@ export default function CommunityProjects() {
                           <td style={{ padding:"10px 12px", color:"#e2e8f0", fontWeight:500, maxWidth:220, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={p.title}>{p.title}</td>
                           <td style={{ padding:"10px 12px", color:"#94a3b8", whiteSpace:"nowrap" }}>{p.lead}</td>
                           <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{p.college?.replace("College of ","")}</td>
-                          <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{p.location}</td>
+                          <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>
+                            <div>{p.location}</div>
+                            {p.createdByName && (
+                              <div style={{ color: "#475569", fontSize: 10, marginTop: 2 }}>👤 {p.createdByName}</div>
+                            )}
+                          </td>
                           <td style={{ padding:"10px 12px", color:"#34d399", fontWeight:600 }}>{(p.beneficiaries||0).toLocaleString()}</td>
                           <td style={{ padding:"10px 12px", color:"#f59e0b", fontSize:12, fontFamily:"monospace" }}>{fmtETB(p.budgetETB||0)}</td>
                           <td style={{ padding:"10px 12px" }}><Badge status={p.status} /></td>
                           <td style={{ padding:"10px 12px" }}>
                             {(user?.role==="admin"||user?.role==="researcher") && (
                               <div style={{ display:"flex", gap:6 }}>
-                                <Btn small variant="secondary" onClick={()=>openEdit(p)}>Edit</Btn>
+                                {/* Show Edit only if owner, collaborator, or admin */}
+                                {(user?.role==="admin" || p.createdBy === user?.id || (p.collaborators && p.collaborators.includes(user?.id))) && (
+                                  <Btn small variant="secondary" onClick={()=>openEdit(p)}>Edit</Btn>
+                                )}
                                 {user?.role==="admin" && <Btn small variant="danger" onClick={()=>handleDelete(p._id)}>Del</Btn>}
                               </div>
                             )}
@@ -338,6 +380,13 @@ export default function CommunityProjects() {
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.75)", zIndex:500, display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
           <div style={{ background:"#162030", borderRadius:16, padding:32, width:"100%", maxWidth:600, border:"1px solid rgba(255,255,255,0.1)", maxHeight:"90vh", overflowY:"auto" }}>
             <h2 style={{ color:"#e2e8f0", fontSize:18, fontWeight:700, marginTop:0, marginBottom:24 }}>{editing?"Edit":"Add"} Community Project</h2>
+            
+            {saveMsg && (
+              <div style={{ background: saveMsg.startsWith("✅") ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)", border: `1px solid ${saveMsg.startsWith("✅") ? "rgba(34,197,94,0.3)" : "rgba(239,68,68,0.3)"}`, borderRadius: 8, padding: "10px 14px", marginBottom: 16, color: saveMsg.startsWith("✅") ? "#4ade80" : "#f87171", fontSize: 13 }}>
+                {saveMsg}
+              </div>
+            )}
+            
             <form onSubmit={handleSubmit} style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
               {[
                 { label:"Title",            key:"title",         type:"text",     span:true },

@@ -9,17 +9,23 @@ const COLLEGE_URL   = process.env.COLLEGE_SERVICE_URL   || "http://localhost:400
 const authHeader = (token) => ({ headers: { Authorization: `Bearer ${token}` } });
 
 const getAggregatedAnalytics = async (token) => {
-  const [rRes, cRes, colRes, rchRes] = await Promise.all([
+  const [rRes, cRes, colRes, rchRes] = await Promise.allSettled([
     axios.get(`${RESEARCH_URL}/projects?limit=100`,            authHeader(token)),
     axios.get(`${COMMUNITY_URL}/community-projects?limit=100`, authHeader(token)),
     axios.get(`${COLLEGE_URL}/colleges`,                       authHeader(token)),
     axios.get(`${COLLEGE_URL}/researchers`,                    authHeader(token)),
   ]);
 
-  const researchProjects  = rRes.data.projects   || [];
-  const communityProjects = cRes.data.projects   || [];
-  const colleges          = colRes.data.colleges || [];
-  const researchers       = rchRes.data.researchers || [];
+  const researchProjects  = rRes.status === 'fulfilled' ? (rRes.value.data.projects   || []) : [];
+  const communityProjects = cRes.status === 'fulfilled' ? (cRes.value.data.projects   || []) : [];
+  const colleges          = colRes.status === 'fulfilled' ? (colRes.value.data.colleges || []) : [];
+  const researchers       = rchRes.status === 'fulfilled' ? (rchRes.value.data.researchers || []) : [];
+
+  // Log failures for debugging
+  if (rRes.status === 'rejected') console.error('Research service error:', rRes.reason.message);
+  if (cRes.status === 'rejected') console.error('Community service error:', cRes.reason.message);
+  if (colRes.status === 'rejected') console.error('College service error (colleges):', colRes.reason.message);
+  if (rchRes.status === 'rejected') console.error('College service error (researchers):', rchRes.reason.message);
 
   const allProjects = [
     ...researchProjects.map(p  => ({ ...p, source: "research"  })),
