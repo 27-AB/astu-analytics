@@ -7,12 +7,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect(process.env.MONGO_URI)
+const mongoStates = ["disconnected", "connected", "connecting", "disconnecting"];
+
+mongoose
+  .connect(process.env.MONGO_URI || "", { serverSelectionTimeoutMS: 10000 })
   .then(() => console.log("Auth-service connected to MongoDB"))
-  .catch(err => console.error("MongoDB error:", err.message));
+  .catch((err) => console.error("MongoDB error:", err.message));
 
 app.use((req, _res, next) => { console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`); next(); });
-app.get("/health", (_req, res) => res.json({ status: "ok", service: "auth-service" }));
+app.get("/health", (_req, res) => {
+  const ready = mongoose.connection.readyState;
+  res.json({
+    status: ready === 1 ? "ok" : "degraded",
+    service: "auth-service",
+    mongo: mongoStates[ready] || "unknown",
+    hasMongoUri: Boolean(process.env.MONGO_URI),
+  });
+});
 app.use("/auth", require("./routes/authRouter"));
 app.use((_req, res) => res.status(404).json({ success: false, message: "Route not found." }));
 

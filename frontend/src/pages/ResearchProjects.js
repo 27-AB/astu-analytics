@@ -6,6 +6,7 @@ import { Badge, SectionCard, PageHeader, Btn, Loader, ErrorMsg, fmtETB } from ".
 import { getServiceUrl } from "../config/api";
 
 const API = getServiceUrl("research");
+const ANALYTICS_API = getServiceUrl("analytics");
 
 // Correct ASTU colleges from official website
 const COLLEGES = [
@@ -58,6 +59,73 @@ export default function ResearchProjects() {
   const [saving,   setSaving]   = useState(false);
   const [saveMsg,  setSaveMsg]  = useState("");
   const [form,     setForm]     = useState(EMPTY_FORM);
+
+  // AI states
+  const [expandedProjectId, setExpandedProjectId] = useState(null);
+  const [translations, setTranslations] = useState({}); // { [projId]: { Amharic: '...', 'Afaan Oromoo': '...' } }
+  const [translating, setTranslating] = useState({}); // { [projId]: true }
+  const [activeLang, setActiveLang] = useState({}); // { [projId]: 'English' }
+  const [matches, setMatches] = useState({}); // { [projId]: [...] }
+  const [matching, setMatching] = useState({}); // { [projId]: true }
+
+  const handleTranslate = async (projectId, text, targetLang) => {
+    setActiveLang(prev => ({ ...prev, [projectId]: targetLang }));
+    if (targetLang === "English") return;
+    if (translations[projectId]?.[targetLang]) return; // Already loaded
+
+    setTranslating(prev => ({ ...prev, [projectId]: true }));
+    try {
+      const res = await fetch(`${ANALYTICS_API}/api/ai/translate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ text, targetLang })
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setTranslations(prev => ({
+          ...prev,
+          [projectId]: { ...prev[projectId], [targetLang]: d.translatedText }
+        }));
+      } else {
+        alert("Translation error: " + (d.message || "Failed to translate"));
+      }
+    } catch (err) {
+      alert("Failed to connect for translation: " + err.message);
+    } finally {
+      setTranslating(prev => ({ ...prev, [projectId]: false }));
+    }
+  };
+
+  const fetchMatchmaking = async (projectId) => {
+    if (matches[projectId]) return; // Already loaded
+    setMatching(prev => ({ ...prev, [projectId]: true }));
+    try {
+      const res = await fetch(`${ANALYTICS_API}/api/ai/match?projectId=${projectId}&source=research`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setMatches(prev => ({ ...prev, [projectId]: d.matchResults }));
+      }
+    } catch (err) {
+      console.error("Matchmaking error:", err.message);
+    } finally {
+      setMatching(prev => ({ ...prev, [projectId]: false }));
+    }
+  };
+
+  const toggleRow = (projectId) => {
+    if (expandedProjectId === projectId) {
+      setExpandedProjectId(null);
+    } else {
+      setExpandedProjectId(projectId);
+      fetchMatchmaking(projectId);
+    }
+  };
+
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -312,33 +380,130 @@ export default function ResearchProjects() {
                   </thead>
                   <tbody>
                     {activeProjects.map(p => (
-                      <tr key={p._id}
-                        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
-                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                        style={{ borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                        <td style={{ padding: "10px 12px", color: "#e2e8f0", fontWeight: 500, maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={p.title}>{p.title}</td>
-                        <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>{p.lead}</td>
-                        <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12 }}>
-                          <div>{p.college?.replace("College of ", "")}</div>
-                          {p.centerOfExcellence && p.centerOfExcellence !== "None" && (
-                            <div style={{ color: "#22d3ee", fontSize: 10, marginTop: 2, fontWeight: 600 }}>🏛️ {p.centerOfExcellence.replace("Center of Excellence for ", "").split(" (")[0]}</div>
-                          )}
-                        </td>
-                        <td style={{ padding: "10px 12px" }}><Badge status={p.status} /></td>
-                        <td style={{ padding: "10px 12px", color: "#f59e0b", fontFamily: "monospace", fontSize: 12 }}>{(p.fundingETB || 0).toLocaleString()}</td>
-                        <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12, fontFamily: "monospace" }}>{p.startDate}</td>
-                        <td style={{ padding: "10px 12px" }}>
-                          {(user?.role === "admin" || user?.role === "researcher") && (
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <Btn small variant="secondary" onClick={() => openEdit(p)}>Edit</Btn>
-                              {user?.role === "admin" && (
-                                <Btn small variant="danger" onClick={() => handleDelete(p._id)}>Delete</Btn>
-                              )}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                      <React.Fragment key={p._id}>
+                        <tr
+                          onClick={(e) => {
+                            if (e.target.closest("button") || e.target.closest("a")) return;
+                            toggleRow(p._id);
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                          style={{ borderBottom: "1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}>
+                          <td style={{ padding: "10px 12px", color: "#e2e8f0", fontWeight: 500, maxWidth: 220, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={p.title}>{p.title}</td>
+                          <td style={{ padding: "10px 12px", color: "#94a3b8", whiteSpace: "nowrap" }}>{p.lead}</td>
+                          <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12 }}>
+                            <div>{p.college?.replace("College of ", "")}</div>
+                            {p.centerOfExcellence && p.centerOfExcellence !== "None" && (
+                              <div style={{ color: "#22d3ee", fontSize: 10, marginTop: 2, fontWeight: 600 }}>🏛️ {p.centerOfExcellence.replace("Center of Excellence for ", "").split(" (")[0]}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: "10px 12px" }}><Badge status={p.status} /></td>
+                          <td style={{ padding: "10px 12px", color: "#f59e0b", fontFamily: "monospace", fontSize: 12 }}>{(p.fundingETB || 0).toLocaleString()}</td>
+                          <td style={{ padding: "10px 12px", color: "#64748b", fontSize: 12, fontFamily: "monospace" }}>{p.startDate}</td>
+                          <td style={{ padding: "10px 12px" }}>
+                            {(user?.role === "admin" || user?.role === "researcher") && (
+                              <div style={{ display: "flex", gap: 6 }}>
+                                <Btn small variant="secondary" onClick={() => openEdit(p)}>Edit</Btn>
+                                {user?.role === "admin" && (
+                                  <Btn small variant="danger" onClick={() => handleDelete(p._id)}>Delete</Btn>
+                                )}
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                        {expandedProjectId === p._id && (
+                          <tr style={{ background: "rgba(10, 18, 30, 0.45)" }}>
+                            <td colSpan={7} style={{ padding: "20px 24px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 24 }}>
+                                
+                                {/* Translation Column */}
+                                <div>
+                                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                                    <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em" }}>Project Abstract / Translation</span>
+                                    <div style={{ display: "flex", gap: 4 }}>
+                                      {["English", "Amharic", "Afaan Oromoo"].map(lang => {
+                                        const active = (activeLang[p._id] || "English") === lang;
+                                        return (
+                                          <button
+                                            key={lang}
+                                            onClick={() => handleTranslate(p._id, p.summary || "No description provided.", lang)}
+                                            style={{
+                                              background: active ? "rgba(34,211,238,0.15)" : "transparent",
+                                              border: active ? "1px solid rgba(34,211,238,0.4)" : "1px solid transparent",
+                                              color: active ? "#22d3ee" : "#64748b",
+                                              padding: "3px 8px",
+                                              borderRadius: 6,
+                                              fontSize: 11,
+                                              cursor: "pointer",
+                                              fontWeight: 600,
+                                            }}
+                                          >
+                                            {lang}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 8, padding: 14, border: "1px solid rgba(255,255,255,0.04)", minHeight: 80 }}>
+                                    {translating[p._id] ? (
+                                      <div style={{ color: "#64748b", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                                        <div style={{ width: 14, height: 14, border: "2px solid rgba(34,211,238,0.2)", borderTopColor: "#22d3ee", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                                        <span>AI Translating abstract...</span>
+                                      </div>
+                                    ) : (
+                                      <p style={{ color: "#cbd5e1", fontSize: 13, margin: 0, lineHeight: 1.6 }}>
+                                        {(activeLang[p._id] || "English") === "English"
+                                          ? (p.summary || "No description provided.")
+                                          : (translations[p._id]?.[activeLang[p._id]] || "No translation loaded.")}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Matchmaking Column */}
+                                <div>
+                                  <span style={{ color: "#94a3b8", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", display: "block", marginBottom: 12 }}>
+                                    🎓 AI Research Matchmaking (Potential Collaborators)
+                                  </span>
+
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                    {matching[p._id] ? (
+                                      <div style={{ color: "#64748b", fontSize: 12, padding: 20, display: "flex", alignItems: "center", gap: 8 }}>
+                                        <div style={{ width: 14, height: 14, border: "2px solid rgba(34,211,238,0.2)", borderTopColor: "#22d3ee", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                                        <span>Evaluating ASTU research graph and finding matches...</span>
+                                      </div>
+                                    ) : matches[p._id] && matches[p._id].length > 0 ? (
+                                      matches[p._id].map(m => (
+                                        <div key={m.projectId} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)", borderRadius: 8, padding: 12 }}>
+                                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+                                            <span style={{ color: "#e2e8f0", fontSize: 12.5, fontWeight: 600 }}>{m.lead}</span>
+                                            <span style={{ background: "rgba(34,197,94,0.1)", color: "#4ade80", padding: "1px 6px", borderRadius: 4, fontSize: 10, fontWeight: 700 }}>
+                                              {m.score}% Match
+                                            </span>
+                                          </div>
+                                          <p style={{ color: "#94a3b8", fontSize: 11, margin: "0 0 6px" }}>{m.title}</p>
+                                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                            {m.reasons.map((r, rIdx) => (
+                                              <span key={rIdx} style={{ background: "rgba(6,182,212,0.06)", border: "1px solid rgba(6,182,212,0.15)", color: "#22d3ee", borderRadius: 4, padding: "1px 4px", fontSize: 9.5 }}>
+                                                {r}
+                                              </span>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      ))
+                                    ) : (
+                                      <p style={{ color: "#475569", fontSize: 12, padding: "10px 0" }}>No matching researchers found with shared tags or overlap.</p>
+                                    )}
+                                  </div>
+                                </div>
+
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+
                     {activeProjects.length === 0 && (
                       <tr><td colSpan={7} style={{ padding: "32px", textAlign: "center", color: "#475569" }}>No active projects found. Click "Seed Sample Data" or create a proposal!</td></tr>
                     )}

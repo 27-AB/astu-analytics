@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
+import AiChatbot from "../ui/AiChatbot";
 
 const NAV = [
   { to: "/",            icon: "📊", label: "Dashboard"          },
@@ -8,6 +9,7 @@ const NAV = [
   { to: "/community",   icon: "👥", label: "Community Projects" },
   { to: "/colleges",    icon: "🏛️", label: "Colleges"           },
   { to: "/researchers", icon: "👨‍🔬", label: "Researchers"        },
+  { to: "/network",     icon: "🕸️", label: "Synergy Network"    },
   { to: "/funding",     icon: "💰", label: "Funding & Grants"   },
   { to: "/reports",     icon: "📄", label: "Reports"            },
   { to: "/settings",    icon: "⚙️", label: "Settings"           },
@@ -116,6 +118,7 @@ export default function Layout({ children }) {
           {children}
         </main>
       </div>
+      <AiChatbot />
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { Badge, SectionCard, PageHeader, Btn, Loader, ErrorMsg, fmtETB } from ".
 import { getServiceUrl } from "../config/api";
 
 const API = getServiceUrl("community");
+const ANALYTICS_API = getServiceUrl("analytics");
 
 // Correct official colleges
 const COLLEGES = [
@@ -32,6 +33,44 @@ export default function CommunityProjects() {
   const [showForm, setShowForm] = useState(false);
   const [editing,  setEditing]  = useState(null);
   const [form,     setForm]     = useState({ title:"", lead:"", college:"", location:"Adama", status:"active", startDate:"", endDate:"", budgetETB:0, beneficiaries:0, volunteers:0, tags:"", summary:"", impact:"" });
+
+  // Translation states
+  const [expandedProjectId, setExpandedProjectId] = useState(null);
+  const [translations, setTranslations] = useState({});
+  const [translating, setTranslating] = useState({});
+  const [activeLang, setActiveLang] = useState({});
+
+  const handleTranslate = async (projectId, text, targetLang) => {
+    setActiveLang(prev => ({ ...prev, [projectId]: targetLang }));
+    if (targetLang === "English") return;
+    if (translations[projectId]?.[targetLang]) return; // Already loaded
+
+    setTranslating(prev => ({ ...prev, [projectId]: true }));
+    try {
+      const res = await fetch(`${ANALYTICS_API}/api/ai/translate`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ text, targetLang })
+      });
+      const d = await res.json();
+      if (res.ok && d.success) {
+        setTranslations(prev => ({
+          ...prev,
+          [projectId]: { ...prev[projectId], [targetLang]: d.translatedText }
+        }));
+      } else {
+        alert("Translation error: " + (d.message || "Failed to translate"));
+      }
+    } catch (err) {
+      alert("Failed to connect for translation: " + err.message);
+    } finally {
+      setTranslating(prev => ({ ...prev, [projectId]: false }));
+    }
+  };
+
 
   const load = useCallback(async () => {
     setLoading(true); setError(null);
@@ -177,25 +216,88 @@ export default function CommunityProjects() {
                     </thead>
                     <tbody>
                       {projects.map(p=>(
-                        <tr key={p._id} style={{ borderBottom:"1px solid rgba(255,255,255,0.04)" }}
-                          onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.02)"}
-                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                          <td style={{ padding:"10px 12px", color:"#e2e8f0", fontWeight:500, maxWidth:220, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={p.title}>{p.title}</td>
-                          <td style={{ padding:"10px 12px", color:"#94a3b8", whiteSpace:"nowrap" }}>{p.lead}</td>
-                          <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{p.college?.replace("College of ","")}</td>
-                          <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{p.location}</td>
-                          <td style={{ padding:"10px 12px", color:"#34d399", fontWeight:600 }}>{(p.beneficiaries||0).toLocaleString()}</td>
-                          <td style={{ padding:"10px 12px", color:"#f59e0b", fontSize:12, fontFamily:"monospace" }}>{fmtETB(p.budgetETB||0)}</td>
-                          <td style={{ padding:"10px 12px" }}><Badge status={p.status} /></td>
-                          <td style={{ padding:"10px 12px" }}>
-                            {(user?.role==="admin"||user?.role==="researcher") && (
-                              <div style={{ display:"flex", gap:6 }}>
-                                <Btn small variant="secondary" onClick={()=>openEdit(p)}>Edit</Btn>
-                                {user?.role==="admin" && <Btn small variant="danger" onClick={()=>handleDelete(p._id)}>Del</Btn>}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
+                        <React.Fragment key={p._id}>
+                          <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)", cursor: "pointer" }}
+                            onClick={(e) => {
+                              if (e.target.closest("button") || e.target.closest("a")) return;
+                              setExpandedProjectId(expandedProjectId === p._id ? null : p._id);
+                            }}
+                            onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.02)"}
+                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                            <td style={{ padding:"10px 12px", color:"#e2e8f0", fontWeight:500, maxWidth:220, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }} title={p.title}>{p.title}</td>
+                            <td style={{ padding:"10px 12px", color:"#94a3b8", whiteSpace:"nowrap" }}>{p.lead}</td>
+                            <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{p.college?.replace("College of ","")}</td>
+                            <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{p.location}</td>
+                            <td style={{ padding:"10px 12px", color:"#34d399", fontWeight:600 }}>{(p.beneficiaries||0).toLocaleString()}</td>
+                            <td style={{ padding:"10px 12px", color:"#f59e0b", fontSize:12, fontFamily:"monospace" }}>{fmtETB(p.budgetETB||0)}</td>
+                            <td style={{ padding:"10px 12px" }}><Badge status={p.status} /></td>
+                            <td style={{ padding:"10px 12px" }}>
+                              {(user?.role==="admin"||user?.role==="researcher") && (
+                                <div style={{ display:"flex", gap:6 }}>
+                                  <Btn small variant="secondary" onClick={()=>openEdit(p)}>Edit</Btn>
+                                  {user?.role==="admin" && <Btn small variant="danger" onClick={()=>handleDelete(p._id)}>Del</Btn>}
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                          {expandedProjectId === p._id && (
+                            <tr style={{ background: "rgba(10, 18, 30, 0.45)" }}>
+                              <td colSpan={8} style={{ padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                                <div style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr", gap: 20 }}>
+                                  <div>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                                      <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em" }}>Outreach Abstract / Translation</span>
+                                      <div style={{ display: "flex", gap: 4 }}>
+                                        {["English", "Amharic", "Afaan Oromoo"].map(lang => {
+                                          const active = (activeLang[p._id] || "English") === lang;
+                                          return (
+                                            <button
+                                              key={lang}
+                                              onClick={() => handleTranslate(p._id, p.summary || "No description provided.", lang)}
+                                              style={{
+                                                background: active ? "rgba(52,211,153,0.15)" : "transparent",
+                                                border: active ? "1px solid rgba(52,211,153,0.4)" : "1px solid transparent",
+                                                color: active ? "#34d399" : "#64748b",
+                                                padding: "3px 8px",
+                                                borderRadius: 6,
+                                                fontSize: 10.5,
+                                                cursor: "pointer",
+                                                fontWeight: 600,
+                                              }}
+                                            >
+                                              {lang}
+                                            </button>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+                                    <div style={{ background: "rgba(0,0,0,0.15)", borderRadius: 8, padding: 12, border: "1px solid rgba(255,255,255,0.04)" }}>
+                                      {translating[p._id] ? (
+                                        <div style={{ color: "#64748b", fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}>
+                                          <div style={{ width: 12, height: 12, border: "2px solid rgba(52,211,153,0.2)", borderTopColor: "#34d399", borderRadius: "50%", animation: "spin 0.8s linear infinite" }} />
+                                          <span>AI Translating...</span>
+                                        </div>
+                                      ) : (
+                                        <p style={{ color: "#cbd5e1", fontSize: 12.5, margin: 0, lineHeight: 1.5 }}>
+                                          {(activeLang[p._id] || "English") === "English"
+                                            ? (p.summary || "No description provided.")
+                                            : (translations[p._id]?.[activeLang[p._id]] || "No translation loaded.")}
+                                        </p>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div>
+                                    <span style={{ color: "#94a3b8", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".05em", display: "block", marginBottom: 10 }}>Social Impact Assessment</span>
+                                    <div style={{ background: "rgba(255,255,255,0.01)", border: "1px solid rgba(255,255,255,0.04)", borderRadius: 8, padding: 12 }}>
+                                      <p style={{ color: "#e2e8f0", fontSize: 12.5, margin: 0, fontWeight: 500 }}>🎯 Target Impact:</p>
+                                      <p style={{ color: "#94a3b8", fontSize: 12, margin: "4px 0 0", lineHeight: 1.4 }}>{p.impact || "General community support and knowledge transfer."}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
                       ))}
                     </tbody>
                   </table>

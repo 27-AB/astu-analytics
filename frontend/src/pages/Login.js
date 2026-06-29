@@ -64,10 +64,21 @@ export default function Login() {
         </form>
 
         <div style={{ marginTop:28, padding:"16px", background:"rgba(6,182,212,0.06)", borderRadius:8, border:"1px solid rgba(6,182,212,0.15)" }}>
-          <p style={{ color:"#64748b", fontSize:12, marginBottom:8, fontWeight:600 }}>DEMO ACCOUNTS:</p>
-          <p style={{ color:"#94a3b8", fontSize:12, margin:"3px 0" }}>Admin: <span style={{ color:"#22d3ee" }}>admin@astu.edu.et</span> / admin1234</p>
-          <p style={{ color:"#94a3b8", fontSize:12, margin:"3px 0" }}>Researcher: <span style={{ color:"#22d3ee" }}>researcher@astu.edu.et</span> / research1234</p>
-          <p style={{ color:"#94a3b8", fontSize:12, margin:"3px 0" }}>Viewer: <span style={{ color:"#22d3ee" }}>viewer@astu.edu.et</span> / viewer1234</p>
+          <p style={{ color:"#64748b", fontSize:12, marginBottom:10, fontWeight:600 }}>DEMO ACCOUNTS & CAPABILITIES:</p>
+          <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+            <div>
+              <p style={{ color:"#94a3b8", fontSize:12, margin:0 }}>Admin: <span style={{ color:"#22d3ee" }}>admin@astu.edu.et</span> / admin1234</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0", fontStyle:"italic" }}>↳ Full access — CRUD projects, manage user roles, wipe/seed database</p>
+            </div>
+            <div>
+              <p style={{ color:"#94a3b8", fontSize:12, margin:0 }}>Researcher: <span style={{ color:"#22d3ee" }}>researcher@astu.edu.et</span> / research1234</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0", fontStyle:"italic" }}>↳ Research access — Add and edit research & community projects, view all insights</p>
+            </div>
+            <div>
+              <p style={{ color:"#94a3b8", fontSize:12, margin:0 }}>Viewer: <span style={{ color:"#22d3ee" }}>viewer@astu.edu.et</span> / viewer1234</p>
+              <p style={{ color:"#64748b", fontSize:11, margin:"2px 0 0", fontStyle:"italic" }}>↳ Read-only access — Browse dashboards, projects, and download reports</p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

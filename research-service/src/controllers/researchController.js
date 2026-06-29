@@ -31,25 +31,54 @@ exports.getOne = async (req, res) => {
 
 exports.create = async (req, res) => {
   try {
-    const project = await Research.create(req.body);
+    const data = { ...req.body };
+    data.ownerId = req.user.id;
+    if (!data.lead) data.lead = req.user.name;
+    const project = await Research.create(data);
     res.status(201).json({ success: true, project });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 };
 
 exports.update = async (req, res) => {
   try {
-    const project = await Research.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    const project = await Research.findById(req.params.id);
     if (!project) return res.status(404).json({ success: false, message: "Not found." });
-    res.json({ success: true, project });
+
+    const isAdmin = req.user.role === "admin";
+    const isOwner = project.ownerId === req.user.id;
+    const isCollaborator = project.collaborators && project.collaborators.some(c => c.userId === req.user.id);
+    const isSeededOwner = !project.ownerId && project.lead === req.user.name;
+
+    if (!isAdmin && !isOwner && !isCollaborator && !isSeededOwner) {
+      return res.status(403).json({ success: false, message: "Access denied. You can only edit your own projects or those you collaborate on." });
+    }
+
+    if (!isAdmin) {
+      delete req.body.ownerId; // prevent changing owner
+    }
+
+    const updatedProject = await Research.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    res.json({ success: true, project: updatedProject });
   } catch (err) { res.status(400).json({ success: false, message: err.message }); }
 };
 
 exports.remove = async (req, res) => {
   try {
+    const project = await Research.findById(req.params.id);
+    if (!project) return res.status(404).json({ success: false, message: "Not found." });
+
+    const isAdmin = req.user.role === "admin";
+    const isOwner = project.ownerId === req.user.id;
+
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ success: false, message: "Access denied. Only the owner or an admin can delete this project." });
+    }
+
     await Research.findByIdAndDelete(req.params.id);
     res.json({ success: true, message: "Project deleted." });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
+
 
 exports.seed = async (req, res) => {
   try {

@@ -38,8 +38,18 @@ export const AuthProvider = ({ children }) => {
     setToken(null); setUser(null);
   };
 
+  const updateSession = (newToken, newUser) => {
+    if (newToken) {
+      localStorage.setItem("astu_token", newToken);
+      setToken(newToken);
+    }
+    if (newUser) {
+      setUser(newUser);
+    }
+  };
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, token, loading, login, logout, updateSession }}>
       {children}
     </AuthContext.Provider>
   );

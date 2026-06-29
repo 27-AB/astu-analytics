@@ -8,6 +8,7 @@ import ResearchProjects  from "./pages/ResearchProjects";
 import CommunityProjects from "./pages/CommunityProjects";
 import Colleges     from "./pages/Colleges";
 import Researchers  from "./pages/Researchers";
+import NetworkGraph from "./pages/NetworkGraph";
 import Funding      from "./pages/Funding";
 import Reports      from "./pages/Reports";
 import Settings     from "./pages/Settings";
@@ -35,6 +36,7 @@ export default function App() {
           <Route path="/community"   element={<ProtectedRoute><CommunityProjects /></ProtectedRoute>} />
           <Route path="/colleges"    element={<ProtectedRoute><Colleges /></ProtectedRoute>} />
           <Route path="/researchers" element={<ProtectedRoute><Researchers /></ProtectedRoute>} />
+          <Route path="/network"     element={<ProtectedRoute><NetworkGraph /></ProtectedRoute>} />
           <Route path="/funding"     element={<ProtectedRoute><Funding /></ProtectedRoute>} />
           <Route path="/reports"     element={<ProtectedRoute><Reports /></ProtectedRoute>} />
           <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />

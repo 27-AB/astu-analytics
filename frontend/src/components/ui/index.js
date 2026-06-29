@@ -81,3 +81,6 @@ export const ErrorMsg = ({ message }) => (
 );
 
 export const fmtETB = (n) => n >= 1_000_000 ? `ETB ${(n/1_000_000).toFixed(1)}M` : n >= 1000 ? `ETB ${(n/1000).toFixed(0)}K` : `ETB ${n}`;
+
+export { default as AiChatbot } from "./AiChatbot";
+

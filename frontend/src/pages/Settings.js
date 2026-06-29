@@ -3,13 +3,39 @@ import { useAuth } from "../context/AuthContext";
 import { PageHeader, SectionCard, Btn } from "../components/ui";
 import { getApiUrls } from "../config/api";
 
+const COLLEGES = [
+  "College of Electrical Engineering & Computing",
+  "College of Mechanical, Chemical & Materials Engineering",
+  "College of Civil Engineering and Architecture",
+  "College of Applied Natural Science",
+  "College of Humanities and Social Science",
+  "Postgraduate Programs",
+];
+
 export default function Settings() {
-  const { user, token } = useAuth();
+  const { user, token, updateSession } = useAuth();
   const [users,      setUsers]      = useState([]);
   const [loadUsers,  setLoadUsers]  = useState(false);
   const [msg,        setMsg]        = useState("");
   const [editRole,   setEditRole]   = useState({});  // {userId: newRole}
   const [savingRole, setSavingRole] = useState(null);
+
+  // Self Profile update states
+  const [profileName, setProfileName] = useState(user?.name || "");
+  const [profileCollege, setProfileCollege] = useState(user?.college || "");
+  const [profilePassword, setProfilePassword] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+
+  // Admin add user states
+  const [showAddUserModal, setShowAddUserModal] = useState(false);
+  const [newUser, setNewUser] = useState({ name: "", email: "", password: "", role: "viewer", college: "" });
+  const [newUserSaving, setNewUserSaving] = useState(false);
+
+  // Admin edit user states
+  const [showEditUserModal, setShowEditUserModal] = useState(false);
+  const [editUser, setEditUser] = useState({ id: "", name: "", email: "", role: "viewer", college: "", isActive: true, password: "" });
+  const [editUserSaving, setEditUserSaving] = useState(false);
+
   
   // API Endpoints State
   const [apiConfig, setApiConfig] = useState(() => {
@@ -44,6 +70,102 @@ export default function Settings() {
       terminalEndRef.current.scrollTop = terminalEndRef.current.scrollHeight;
     }
   }, [logs]);
+
+  const handleUpdateProfile = async (e) => {
+    e.preventDefault();
+    setProfileSaving(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${apiConfig.authUrl}/auth/profile`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: profileName,
+          college: profileCollege,
+          password: profilePassword || undefined
+        })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || "Failed to update profile.");
+      
+      updateSession(d.token, d.user);
+      setProfilePassword(""); // Reset password input
+      addLog("Successfully updated session profile", "success");
+      setMsg("success:Profile updated successfully.");
+    } catch (err) {
+      setMsg("error:" + err.message);
+      addLog(`Failed to update session profile: ${err.message}`, "error");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const handleAdminCreateUser = async (e) => {
+    e.preventDefault();
+    setNewUserSaving(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${apiConfig.authUrl}/auth/users`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify(newUser)
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || "Failed to create user.");
+
+      setNewUser({ name: "", email: "", password: "", role: "viewer", college: "" });
+      setShowAddUserModal(false);
+      fetchUsers();
+      setMsg("success:User created successfully.");
+      addLog(`Admin created new user: ${newUser.email}`, "success");
+    } catch (err) {
+      setMsg("error:" + err.message);
+      addLog(`Admin user creation failed: ${err.message}`, "error");
+    } finally {
+      setNewUserSaving(false);
+    }
+  };
+
+  const handleAdminUpdateUser = async (e) => {
+    e.preventDefault();
+    setEditUserSaving(true);
+    setMsg("");
+    try {
+      const res = await fetch(`${apiConfig.authUrl}/auth/users/${editUser.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          name: editUser.name,
+          email: editUser.email,
+          role: editUser.role,
+          college: editUser.college,
+          isActive: editUser.isActive,
+          password: editUser.password || undefined
+        })
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.message || "Failed to update user.");
+
+      setShowEditUserModal(false);
+      fetchUsers();
+      setMsg("success:User profile updated successfully.");
+      addLog(`Admin updated user profile: ${editUser.email}`, "success");
+    } catch (err) {
+      setMsg("error:" + err.message);
+      addLog(`Admin user profile update failed: ${err.message}`, "error");
+    } finally {
+      setEditUserSaving(false);
+    }
+  };
 
   // Fetch registered users (admin only)
   const fetchUsers = async () => {
@@ -328,15 +450,27 @@ export default function Settings() {
       {/* User management — admin only */}
       {user?.role === "admin" && (
         <div style={{ marginTop:16 }}>
-          <SectionCard title="User Account Control" action={<span style={{ color:"#64748b", fontSize:12 }}>{users.length} registered accounts</span>}>
-            <p style={{ color:"#64748b", fontSize:13, marginBottom:16 }}>
-              Promote or demote users. Permissions change instantly across research, community, and settings access.
+          <SectionCard 
+            title="User Account Control" 
+            action={
+              <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                <Btn small onClick={() => setShowAddUserModal(true)}>+ Create New User</Btn>
+                <span style={{ color:"#64748b", fontSize:12 }}>{users.length} accounts</span>
+              </div>
+            }
+          >
+            <p style={{ color:"#64748b", fontSize:13, marginBottom:16, lineHeight:1.5 }}>
+              Manage registered users, change roles, modify profiles, or activate/deactivate accounts.
+              <br />
+              <span style={{ color:"#ef4444", fontWeight:600 }}>Admin:</span> Full control &middot; 
+              <span style={{ color:"#38bdf8", fontWeight:600, marginLeft:8 }}>Researcher:</span> Project control &middot; 
+              <span style={{ color:"#34d399", fontWeight:600, marginLeft:8 }}>Viewer:</span> Read-only
             </p>
             {loadUsers ? <p style={{ color:"#64748b" }}>Loading database records...</p> : (
               <div style={{ overflowX:"auto" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
                   <thead>
-                    <tr>{["Full Name","Email","Current Role","Change Role","College","Registered"].map(h=>(
+                    <tr>{["Full Name","Email","Role","College","Status","Registered","Actions"].map(h=>(
                       <th key={h} style={{ textAlign:"left", padding:"8px 12px", color:"#475569", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:".05em", borderBottom:"1px solid rgba(255,255,255,0.06)", whiteSpace:"nowrap" }}>{h}</th>
                     ))}</tr>
                   </thead>
@@ -348,27 +482,31 @@ export default function Settings() {
                         <td style={{ padding:"10px 12px" }}>
                           <span style={{ background:`${ROLE_COLOR[u.role]}15`, color:ROLE_COLOR[u.role], padding:"3px 10px", borderRadius:99, fontSize:11, fontWeight:600, textTransform:"capitalize" }}>{u.role}</span>
                         </td>
+                        <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{u.college || "—"}</td>
+                        <td style={{ padding:"10px 12px" }}>
+                          <span style={{ color: u.isActive !== false ? "#34d399" : "#ef4444", fontWeight: 600 }}>
+                            {u.isActive !== false ? "Active" : "Deactivated"}
+                          </span>
+                        </td>
+                        <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12, fontFamily:"monospace" }}>{new Date(u.createdAt).toLocaleDateString()}</td>
                         <td style={{ padding:"10px 12px" }}>
                           {u._id !== user?.id ? (
-                            <div style={{ display:"flex", gap:6, alignItems:"center" }}>
-                              <select
-                                defaultValue={u.role}
-                                onChange={e => setEditRole(r => ({...r, [u._id]: e.target.value}))}
-                                style={{ background:"#0f1824", border:"1px solid rgba(255,255,255,0.1)", borderRadius:6, padding:"5px 8px", color:"#e2e8f0", fontSize:12, outline:"none", fontFamily:"inherit" }}>
-                                <option value="viewer">Viewer</option>
-                                <option value="researcher">Researcher</option>
-                                <option value="admin">Admin</option>
-                              </select>
-                              <Btn small onClick={() => handleRoleChange(u._id, editRole[u._id] || u.role)} disabled={savingRole === u._id}>
-                                {savingRole === u._id ? "..." : "Apply"}
-                              </Btn>
-                            </div>
+                            <Btn small variant="secondary" onClick={() => {
+                              setEditUser({
+                                id: u._id,
+                                name: u.name,
+                                email: u.email,
+                                role: u.role,
+                                college: u.college || "",
+                                isActive: u.isActive !== false,
+                                password: ""
+                              });
+                              setShowEditUserModal(true);
+                            }}>Modify</Btn>
                           ) : (
-                            <span style={{ color:"#475569", fontSize:12 }}>Logged-in Account</span>
+                            <span style={{ color:"#475569", fontSize:12 }}>Logged-in</span>
                           )}
                         </td>
-                        <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12 }}>{u.college || "—"}</td>
-                        <td style={{ padding:"10px 12px", color:"#64748b", fontSize:12, fontFamily:"monospace" }}>{new Date(u.createdAt).toLocaleDateString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -379,24 +517,124 @@ export default function Settings() {
         </div>
       )}
 
-      {/* Account Info */}
+      {/* Account Info form for self-update */}
       <div style={{ marginTop:16 }}>
-        <SectionCard title="User Session Profile">
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:12 }}>
-            {[
-              { label:"Full Name", value: user?.name },
-              { label:"Email Address",     value: user?.email },
-              { label:"Access Privilege",      value: user?.role },
-              { label:"Institutional College",   value: user?.college || "—" },
-            ].map(({ label, value }) => (
-              <div key={label} style={{ background:"rgba(255,255,255,0.03)", borderRadius:8, padding:"12px 16px" }}>
-                <p style={{ color:"#475569", fontSize:11, fontWeight:600, textTransform:"uppercase", letterSpacing:".05em", margin:"0 0 4px" }}>{label}</p>
-                <p style={{ color:"#e2e8f0", fontSize:13, fontWeight:500, margin:0, textTransform:"capitalize" }}>{value}</p>
-              </div>
-            ))}
-          </div>
+        <SectionCard title="Update Session Profile">
+          <form onSubmit={handleUpdateProfile} style={{ display:"grid", gridTemplateColumns:"repeat(4, 1fr)", gap:14, alignItems:"end" }}>
+            <div>
+              <label style={labelStyle}>Full Name</label>
+              <input value={profileName} onChange={e=>setProfileName(e.target.value)} style={inputStyle} placeholder="Name" required />
+            </div>
+            <div>
+              <label style={labelStyle}>College Affiliation</label>
+              <select value={profileCollege} onChange={e=>setProfileCollege(e.target.value)} style={inputStyle}>
+                <option value="">No College (viewer / admin)</option>
+                {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={labelStyle}>New Password (optional)</label>
+              <input type="password" value={profilePassword} onChange={e=>setProfilePassword(e.target.value)} style={inputStyle} placeholder="Leave blank to keep current" />
+            </div>
+            <div>
+              <Btn disabled={profileSaving} style={{ width: "100%" }}>
+                {profileSaving ? "Saving..." : "Save Profile"}
+              </Btn>
+            </div>
+          </form>
         </SectionCard>
       </div>
+
+      {/* Add User Modal */}
+      {showAddUserModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#162030", borderRadius: 16, padding: 32, width: "100%", maxWidth: 500, border: "1px solid rgba(255,255,255,0.1)" }}>
+            <h3 style={{ color: "#e2e8f0", fontSize: 18, fontWeight: 700, marginTop: 0, marginBottom: 20 }}>Create New User Account</h3>
+            <form onSubmit={handleAdminCreateUser} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={labelStyle}>Full Name *</label>
+                <input required value={newUser.name} onChange={e => setNewUser(prev => ({ ...prev, name: e.target.value }))} style={inputStyle} placeholder="Name" />
+              </div>
+              <div>
+                <label style={labelStyle}>Email Address *</label>
+                <input required type="email" value={newUser.email} onChange={e => setNewUser(prev => ({ ...prev, email: e.target.value }))} style={inputStyle} placeholder="email@astu.edu.et" />
+              </div>
+              <div>
+                <label style={labelStyle}>Password *</label>
+                <input required type="password" value={newUser.password} onChange={e => setNewUser(prev => ({ ...prev, password: e.target.value }))} style={inputStyle} placeholder="password" />
+              </div>
+              <div>
+                <label style={labelStyle}>Access Role *</label>
+                <select value={newUser.role} onChange={e => setNewUser(prev => ({ ...prev, role: e.target.value }))} style={inputStyle}>
+                  <option value="viewer">Viewer</option>
+                  <option value="researcher">Researcher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>College</label>
+                <select value={newUser.college} onChange={e => setNewUser(prev => ({ ...prev, college: e.target.value }))} style={inputStyle}>
+                  <option value="">No College</option>
+                  {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                <Btn variant="secondary" onClick={() => setShowAddUserModal(false)}>Cancel</Btn>
+                <Btn disabled={newUserSaving}>{newUserSaving ? "Creating..." : "Create User"}</Btn>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit User Modal */}
+      {showEditUserModal && (
+        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.75)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ background: "#162030", borderRadius: 16, padding: 32, width: "100%", maxWidth: 500, border: "1px solid rgba(255,255,255,0.1)" }}>
+            <h3 style={{ color: "#e2e8f0", fontSize: 18, fontWeight: 700, marginTop: 0, marginBottom: 20 }}>Modify User Profile</h3>
+            <form onSubmit={handleAdminUpdateUser} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div>
+                <label style={labelStyle}>Full Name</label>
+                <input required value={editUser.name} onChange={e => setEditUser(prev => ({ ...prev, name: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Email Address</label>
+                <input required type="email" value={editUser.email} onChange={e => setEditUser(prev => ({ ...prev, email: e.target.value }))} style={inputStyle} />
+              </div>
+              <div>
+                <label style={labelStyle}>Access Role</label>
+                <select value={editUser.role} onChange={e => setEditUser(prev => ({ ...prev, role: e.target.value }))} style={inputStyle}>
+                  <option value="viewer">Viewer</option>
+                  <option value="researcher">Researcher</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>College</label>
+                <select value={editUser.college} onChange={e => setEditUser(prev => ({ ...prev, college: e.target.value }))} style={inputStyle}>
+                  <option value="">No College</option>
+                  {COLLEGES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Account Status</label>
+                <select value={String(editUser.isActive)} onChange={e => setEditUser(prev => ({ ...prev, isActive: e.target.value === "true" }))} style={inputStyle}>
+                  <option value="true">Active</option>
+                  <option value="false">Deactivated</option>
+                </select>
+              </div>
+              <div>
+                <label style={labelStyle}>Reset Password (optional)</label>
+                <input type="password" value={editUser.password} onChange={e => setEditUser(prev => ({ ...prev, password: e.target.value }))} style={inputStyle} placeholder="Leave blank to keep current" />
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, marginTop: 10 }}>
+                <Btn variant="secondary" onClick={() => setShowEditUserModal(false)}>Cancel</Btn>
+                <Btn disabled={editUserSaving}>{editUserSaving ? "Saving..." : "Save Changes"}</Btn>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

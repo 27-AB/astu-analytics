@@ -24,15 +24,20 @@ export default function Reports() {
   const [csvLoading, setCsvLoading] = useState(false);
   const [msg,        setMsg]        = useState("");
 
-  const downloadPDF = async () => {
+  const downloadPDF = async (type = "full") => {
     setPdfLoading(true); setMsg("");
     try {
-      const res = await fetch(`${API}/api/report`, { headers:{ Authorization:`Bearer ${token}` }});
+      const res = await fetch(`${API}/api/report?type=${type}`, { headers:{ Authorization:`Bearer ${token}` }});
       if (!res.ok) throw new Error("Report generation failed. Ensure all services are running.");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
+      
+      let downloadName = `ASTU_Analytics_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+      if (type === "research") downloadName = `ASTU_Research_Summary_${new Date().toISOString().slice(0,10)}.pdf`;
+      if (type === "community") downloadName = `ASTU_Community_Impact_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+
       const a = document.createElement("a");
-      a.href = url; a.download = `ASTU_Analytics_Report_${new Date().toISOString().slice(0,10)}.pdf`;
+      a.href = url; a.download = downloadName;
       a.click(); URL.revokeObjectURL(url);
       setMsg("success:Report downloaded successfully.");
     } catch(e){ setMsg("error:" + e.message); }
@@ -72,7 +77,7 @@ export default function Reports() {
           title="Full Analytics Report (PDF)"
           desc="A comprehensive report covering all active research and community projects, funding distribution, college statistics, and researcher data. Formatted for official university documentation."
           icon="📄" color="#ef4444"
-          onGenerate={downloadPDF} loading={pdfLoading}
+          onGenerate={() => downloadPDF("full")} loading={pdfLoading}
         />
         <ReportCard
           title="Projects Data Export (CSV)"
@@ -84,13 +89,13 @@ export default function Reports() {
           title="Research Summary (PDF)"
           desc="A focused report on research activities — covering funding sources, publication counts, team compositions, and project status. Suitable for submission to the Research Excellence Office."
           icon="🔬" color="#38bdf8"
-          onGenerate={downloadPDF} loading={pdfLoading}
+          onGenerate={() => downloadPDF("research")} loading={pdfLoading}
         />
         <ReportCard
           title="Community Impact Report (PDF)"
           desc="Details the university's community outreach performance, including beneficiaries reached, volunteer involvement, geographic coverage, and budget utilisation across all active programmes."
           icon="👥" color="#a78bfa"
-          onGenerate={downloadPDF} loading={pdfLoading}
+          onGenerate={() => downloadPDF("community")} loading={pdfLoading}
         />
       </div>
 

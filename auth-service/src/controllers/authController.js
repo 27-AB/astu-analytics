@@ -86,3 +86,84 @@ exports.seed = async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 };
+
+// PUT /auth/profile
+exports.updateProfile = async (req, res) => {
+  try {
+    const { name, email, password, college } = req.body;
+    const user = await User.findById(req.user.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+
+    if (email && email !== user.email) {
+      if (await User.findOne({ email })) {
+        return res.status(400).json({ success: false, message: "Email is already in use." });
+      }
+      user.email = email;
+    }
+    if (name) user.name = name;
+    if (college !== undefined) user.college = college;
+    if (password) user.password = password;
+
+    await user.save();
+    res.json({ 
+      success: true, 
+      message: "Profile updated successfully.",
+      token: sign(user),
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, college: user.college }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// POST /auth/users (admin only)
+exports.adminCreateUser = async (req, res) => {
+  try {
+    const { name, email, password, role, college } = req.body;
+    if (!name || !email || !password || !role) {
+      return res.status(400).json({ success: false, message: "Missing required fields." });
+    }
+    if (await User.findOne({ email })) {
+      return res.status(400).json({ success: false, message: "Email already registered." });
+    }
+    const user = await User.create({ name, email, password, role, college });
+    res.status(201).json({ 
+      success: true, 
+      message: "User created successfully.", 
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, college: user.college } 
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// PUT /auth/users/:id (admin only)
+exports.adminUpdateUserProfile = async (req, res) => {
+  try {
+    const { name, email, role, college, isActive, password } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: "User not found." });
+
+    if (email && email !== user.email) {
+      if (await User.findOne({ email })) {
+        return res.status(400).json({ success: false, message: "Email is already in use." });
+      }
+      user.email = email;
+    }
+    if (name) user.name = name;
+    if (role) user.role = role;
+    if (college !== undefined) user.college = college;
+    if (isActive !== undefined) user.isActive = isActive;
+    if (password) user.password = password;
+
+    await user.save();
+    res.json({ 
+      success: true, 
+      message: "User profile updated successfully.",
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, college: user.college, isActive: user.isActive }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
