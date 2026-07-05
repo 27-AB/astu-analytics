@@ -1,0 +1,6 @@
+{
+  "name": "ASTU Research Analytics Portal",
+  "description": "Comprehensive telemetry and analytics dashboard for Adama Science and Technology University projects, researchers, colleges, and social outreach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
