@@ -478,6 +478,49 @@ export default function Dashboard() {
 
       {/* Recent projects table */}
       <SectionCard title="Recent Projects">
+
+        {/* WINNING FEATURE: Strategic Intelligence Hub */}
+      <div style={{ marginBottom: 24, padding: '24px', background: 'linear-gradient(135deg, #0f172a, #161e31)', borderRadius: '16px', border: '1px solid rgba(34, 211, 238, 0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <h2 style={{ color: '#22d3ee', margin: 0, fontSize: '18px', fontWeight: 800 }}>✨ ASTU STRATEGIC INTELLIGENCE</h2>
+            <p style={{ color: '#64748b', fontSize: '12px', marginTop: 4 }}>Proactive data-scan for institutional innovation</p>
+          </div>
+          <button 
+            onClick={runAiStrategy} 
+            disabled={analyzing} 
+            style={{ padding: '10px 24px', borderRadius: '8px', background: '#1d4ed8', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+          >
+            {analyzing ? "🧠 Analyzing..." : "🚀 Run Strategic Scan"}
+          </button>
+        </div>
+
+        {analysis && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', animation: 'fadeIn 0.5s ease' }}>
+            <div style={{ background: 'rgba(34, 211, 238, 0.03)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(34, 211, 238, 0.1)' }}>
+              <h4 style={{ color: '#22d3ee', fontSize: '13px', marginBottom: 10 }}>🎯 Research Gaps</h4>
+              {analysis.gaps.map((g, i) => (
+                <div key={i} style={{ fontSize: '11px', marginBottom: 8, color: '#94a3b8' }}>
+                  <strong style={{ color: '#e2e8f0', display: 'block' }}>{g.title}</strong> {g.description}
+                </div>
+              ))}
+            </div>
+            <div style={{ background: 'rgba(167, 139, 250, 0.03)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(167, 139, 250, 0.1)' }}>
+              <h4 style={{ color: '#a78bfa', fontSize: '13px', marginBottom: 10 }}>🤝 Potential Synergies</h4>
+              {analysis.synergies.map((s, i) => (
+                <div key={i} style={{ fontSize: '11px', marginBottom: 8, color: '#94a3b8' }}>
+                  <strong style={{ color: '#e2e8f0', display: 'block' }}>{s.pair}</strong> {s.concept}
+                </div>
+              ))}
+            </div>
+            <div style={{ background: 'rgba(20, 184, 166, 0.03)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(20, 184, 166, 0.1)' }}>
+              <h4 style={{ color: '#14b8a6', fontSize: '13px', marginBottom: 10 }}>📊 2027 Forecast</h4>
+              <p style={{ fontSize: '11px', color: '#94a3b8', lineHeight: '1.6' }}>{analysis.forecast}</p>
+            </div>
+          </div>
+        )}
+      </div>
+          
         <div style={{ overflowX:"auto" }}>
           <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
             <thead>
