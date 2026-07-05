@@ -2,6 +2,52 @@ const { GoogleGenerativeAI } = require("@google/generative-ai");
 const AiCache = require("../models/AiCache");
 const { getAggregatedAnalytics } = require("../services/aggregatorService");
 
+/**
+ * WINNING FEATURE: Strategic Synergy & Gap Analysis
+ * This isn't a chatbot. it's a data scientist that scans the whole university.
+ */
+exports.getStrategicAnalysis = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(" ")[1];
+    const data = await getAggregatedAnalytics(token);
+
+    if (!genAI) return res.status(500).json({ success: false, message: "AI Key missing." });
+
+    // Check cache: If someone already ran this today, don't waste API tokens
+    const cacheKey = `strat_analysis_${data.summary.totalProjects}`;
+    const cached = await AiCache.findOne({ key: cacheKey });
+    if (cached) return res.json({ success: true, analysis: JSON.parse(cached.content), source: "cache" });
+
+    const model = genAI.getGenerativeModel({ 
+        model: "gemini-1.5-flash",
+        generationConfig: { responseMimeType: "application/json" } 
+    });
+
+    const prompt = `You are the ASTU Strategic AI. Analyze this university data:
+    - Colleges: ${data.colleges.length}
+    - Research Projects: ${data.summary.researchCount}
+    - Total Funding: ${data.summary.totalFundingETB} ETB
+    - Current Themes: ${JSON.stringify([...new Set(data.researchProjects.flatMap(p => p.tags || []))])}
+
+    Return a JSON object:
+    { 
+      "gaps": [{"title": "e.g. Lack of Cybersecurity", "description": "why it's a problem"}], 
+      "synergies": [{"pair": "e.g. Computing + Agriculture", "concept": "idea for new project"}], 
+      "forecast": "Prediction for next year's funding" 
+    }`;
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    
+    // Save to cache
+    await AiCache.create({ type: "chat", key: cacheKey, content: responseText });
+
+    res.json({ success: true, analysis: JSON.parse(responseText) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: "AI Strategic Analysis Failed" });
+  }
+};
+
 // Initialize Gemini GenAI Client safely
 let genAI = null;
 if (process.env.GEMINI_API_KEY) {
