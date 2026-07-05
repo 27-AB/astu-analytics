@@ -19,5 +19,8 @@ router.post("/ai/translate", protect, translateText);
 router.post("/ai/chat",      protect, chatLimiter, chatCopilot);
 router.get("/ai/match",      protect, getMatchmaking);
 
+// New Strategic Route
+router.get("/ai/strategic-analysis", protect, require("../controllers/aiController").getStrategicAnalysis);
+
 
 module.exports = router;
