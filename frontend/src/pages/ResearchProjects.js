@@ -117,12 +117,17 @@ export default function ResearchProjects() {
     }
   };
 
-  const toggleRow = (projectId) => {
+ const toggleRow = (projectId) => {
     if (expandedProjectId === projectId) {
       setExpandedProjectId(null);
     } else {
       setExpandedProjectId(projectId);
-      fetchMatchmaking(projectId);
+      
+      // BUG FIX: Only fetch matchmaking if we don't already have results.
+      // This prevents the "continuous" network request loop.
+      if (!matches[projectId] && !matching[projectId]) {
+        fetchMatchmaking(projectId);
+      }
     }
   };
 
